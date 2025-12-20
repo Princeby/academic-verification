@@ -61,5 +61,22 @@ pub mod pallet {
         InstitutionRevoked { did: T::AccountId },
     }
 
+    //Storage
+
+    //Errors
+    #[pallet::error]
+    pub enum Error<T> {
+        DidAlreadyExists,
+        DidNotFound,
+        NotAuthorized,
+        TooManyPublicKeys,
+        PublicKeyAlreadyExists,
+        PublicKeyNotFound,
+        InstitutionAlreadyRegistered,
+        InstitutionNotFound,
+        DidInactive,
+        InvalidInstitutionName,
+    }
+
 
 }
