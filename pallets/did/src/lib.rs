@@ -6,6 +6,7 @@
 //! This pallet implements Decentralized Identifiers (DIDs) for academic verification.
 
 pub use pallet::*;
+use frame::hashing;
 
 #[cfg(test)]
 mod mock;
@@ -23,7 +24,7 @@ pub use weights::*;
 #[frame::pallet]
 pub mod pallet {
     use super::*;
-    use frame::{prelude::*, runtime::apis::KeyTypeId};
+    use frame::prelude::*;
 
     #[pallet::pallet]
     pub struct Pallet<T>(_);
@@ -70,7 +71,7 @@ pub mod pallet {
         pub public_key: [u8; 32],
     }
 
-    #[derive(Clone, Encode, Decode, Eq, PartialEq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+    #[derive(Clone, Copy, Encode, Decode, DecodeWithMemTracking, Eq, PartialEq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
     pub enum KeyType {
         Ed25519,
         Sr25519,
@@ -130,6 +131,59 @@ pub mod pallet {
         InstitutionNotFound,
         DidInactive,
         InvalidInstitutionName,
+    }
+
+    #[pallet::call]
+    impl<T: Config> Pallet<T> {
+        /// Create a new DID with an initial public key
+        ///
+        /// # Arguments
+        /// * `origin` - The account creating the DID
+        /// * `public_key` - The initial public key to associate
+        /// * `key_type` - The type of the public key
+        ///
+        /// # Errors
+        /// * `DidAlreadyExists` - If a DID already exists for this account
+        /// * `TooManyPublicKeys` - Should not occur on creation with single key
+        #[pallet::call_index(0)]
+        #[pallet::weight(T::WeightInfo::create_did())]
+        pub fn create_did(
+            origin: OriginFor<T>,
+            public_key: [u8; 32],
+            key_type: KeyType,
+        ) -> DispatchResult {
+            let who = ensure_signed(origin)?;
+
+            ensure!(
+                !DidDocuments::<T>::contains_key(&who),
+                Error::<T>::DidAlreadyExists
+            );
+
+            let key_entry = PublicKeyEntry {
+                key_id: hashing::blake2_256(&public_key),
+                key_type,
+                public_key,
+            };
+
+            let mut public_keys = BoundedVec::new();
+            public_keys.try_push(key_entry)
+                .map_err(|_| Error::<T>::TooManyPublicKeys)?;
+
+            let did_doc = DidDocument {
+                controller: who.clone(),
+                public_keys,
+                created_at: frame_system::Pallet::<T>::block_number(),
+                updated_at: frame_system::Pallet::<T>::block_number(),
+                active: true,
+            };
+
+            DidDocuments::<T>::insert(&who, did_doc);
+            Self::deposit_event(Event::DidCreated { owner: who });
+
+            Ok(())
+
+        }
+
     }
 
 
