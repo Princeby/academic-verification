@@ -76,6 +76,17 @@ pub mod pallet {
         Sr25519,
         Ecdsa,
     }
+
+      /// DID Document containing identity information
+      #[derive(Clone, Encode, Decode, Eq, PartialEq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+      #[scale_info(skip_type_params(T))]
+      pub struct DidDocument<T: Config> {
+        pub controller: T::AccountId,
+        pub public_keys: BoundedVec<PublicKeyEntry, T::MaxPublicKeys>,
+        pub created_at: BlockNumberFor<T>,
+        pub updated_at: BlockNumberFor<T>,
+        pub active: bool,
+      }
     
     //Errors
     #[pallet::error]
