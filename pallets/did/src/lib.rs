@@ -23,7 +23,7 @@ pub use weights::*;
 #[frame::pallet]
 pub mod pallet {
     use super::*;
-    use frame::prelude::*;
+    use frame::{prelude::*, runtime::apis::KeyTypeId};
 
     #[pallet::pallet]
     pub struct Pallet<T>(_);
@@ -63,6 +63,20 @@ pub mod pallet {
 
     //Storage
 
+    #[derive(Clone, Encode, Decode, Eq, PartialEq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+    pub struct PublicKeyEntry {
+        pub key_id: [u8; 32],
+        pub key_type: KeyType,
+        pub public_key: [u8; 32],
+    }
+
+    #[derive(Clone, Encode, Decode, Eq, PartialEq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+    pub enum KeyType {
+        Ed25519,
+        Sr25519,
+        Ecdsa,
+    }
+    
     //Errors
     #[pallet::error]
     pub enum Error<T> {
