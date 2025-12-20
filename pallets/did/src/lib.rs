@@ -97,6 +97,26 @@ pub mod pallet {
         pub verfified: bool,
         pub registered_at: BlockNumberFor<T>,
     }
+
+    ///Storage of all DID documents, indexed by account ID
+    #[pallet::storage]
+    #[pallet::getter(fn did_documents)]
+    pub type DidDocuments<T: Config> = StorageMap<
+        _,
+        Blake2_128Concat,
+        T::AccountId,
+        DidDocument<T>,
+    >;
+
+    /// Storage of institution registrations
+    #[pallet::storage]
+    #[pallet::getter(fn institutions)]
+    pub type Institutions<T: Config> = StorageMap<
+        _,
+        Blake2_128Concat,
+        T::AccountId,
+        Institution<T>,
+    >;
     //Errors
     #[pallet::error]
     pub enum Error<T> {
