@@ -1,14 +1,65 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+#![cfg_attr(not(feature = "std"), no_std)]
+
+//! # DID Pallet
+//! 
+//! ## Overview
+//! This pallet implements Decentralized Identifiers (DIDs) for academic verification.
+
+pub use pallet::*;
 
 #[cfg(test)]
-mod tests {
-    use super::*;
+mod mock;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
+#[cfg(test)]
+mod tests;
+
+#[cfg(feature = "runtime-benchmarks")]
+mod benchmarking;
+
+pub mod weights;
+pub use weights::*;
+
+
+#[frame::pallet]
+pub mod pallet {
+    use super::*;
+    use frame::prelude::*;
+
+    #[pallet::pallet]
+    pub struct Pallet<T>(_);
+
+    /// The pallet's configuration trait
+    #[pallet::config]
+    pub trait Config: frame_system::Config {
+        /// The overarching event type
+        type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
+        
+        /// Maximum size of institution name or document metadata
+        #[pallet::constant]
+        type MaxDocumentSize: Get<u32>;
+        
+        /// Maximum number of public keys per DID
+        #[pallet::constant]
+        type MaxPublicKeys: Get<u32>;
+
+        /// Weight information for extrinsics
+        type WeightInfo: WeightInfo;
     }
+
+
+    //Events
+    #[pallet::event]
+    #[pallet::generate_deposit(pub(super) fn deposit_event)]
+    pub enum Event<T: Config> {
+        DidCreated { owner: T::AccountId },
+        DidUpdated { owner: T::AccountId },
+        DidDeactivated { owner: T::AccountId },
+        PublicKeyAdded { owner: T::AccountId, key_id: [u8; 32] },
+        PublicKeyRemoved { owner: T::AccountId, key_id: [u8; 32] },
+        InstitutionRegistered { did: T::AccountId, name: BoundedVec<u8, T::MaxDocumentSize> },
+        InstitutionVerified { did: T::AccountId },
+        InstitutionRevoked { did: T::AccountId },
+    }
+
+
 }
