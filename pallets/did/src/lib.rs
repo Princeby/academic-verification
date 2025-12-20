@@ -87,7 +87,16 @@ pub mod pallet {
         pub updated_at: BlockNumberFor<T>,
         pub active: bool,
       }
-    
+
+      /// Institution registration information
+    #[derive(Clone, Encode, Decode, Eq, PartialEq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+    #[scale_info(skip_type_params(T))]
+    pub struct Institution<T: Config> {
+        pub name: BoundedVec<u8, T::MaxDocumentSize>,
+        pub did: T::AccountId,
+        pub verfified: bool,
+        pub registered_at: BlockNumberFor<T>,
+    }
     //Errors
     #[pallet::error]
     pub enum Error<T> {
