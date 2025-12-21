@@ -488,3 +488,193 @@ fn verify_institution_works() {
     });
 }
 
+#[test]
+fn verify_institution_fails_for_non_root() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        let account = 1u64;
+        let public_key = [1u8; 32];
+        
+        // Create DID and register institution
+        assert_ok!(Did::create_did(
+            RuntimeOrigin::signed(account),
+            public_key,
+            KeyType::Ed25519
+        ));
+        
+        let name = b"Harvard University".to_vec().try_into().unwrap();
+        assert_ok!(Did::register_institution(
+            RuntimeOrigin::signed(account),
+            name
+        ));
+        
+        // Try to verify from non-root account
+        assert_noop!(
+            Did::verify_institution(
+                RuntimeOrigin::signed(account),
+                account
+            ),
+            DispatchError::BadOrigin
+        );
+    });
+}
+
+#[test]
+fn revoke_institution_works() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        let account = 1u64;
+        let public_key = [1u8; 32];
+        
+        // Create DID, register and verify institution
+        assert_ok!(Did::create_did(
+            RuntimeOrigin::signed(account),
+            public_key,
+            KeyType::Ed25519
+        ));
+        
+        let name = b"Harvard University".to_vec().try_into().unwrap();
+        assert_ok!(Did::register_institution(
+            RuntimeOrigin::signed(account),
+            name
+        ));
+        
+        assert_ok!(Did::verify_institution(
+            RuntimeOrigin::root(),
+            account
+        ));
+        
+        // Revoke verification
+        assert_ok!(Did::revoke_institution(
+            RuntimeOrigin::root(),
+            account
+        ));
+        
+        // Check verification status
+        let institution = Institutions::<Test>::get(account).unwrap();
+        assert_eq!(institution.verified, false);
+        
+        // Verify event
+        System::assert_last_event(
+            Event::InstitutionRevoked { did: account }.into()
+        );
+    });
+}
+
+#[test]
+fn revoke_institution_fails_for_non_root() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        let account = 1u64;
+        let public_key = [1u8; 32];
+        
+        // Create DID, register and verify institution
+        assert_ok!(Did::create_did(
+            RuntimeOrigin::signed(account),
+            public_key,
+            KeyType::Ed25519
+        ));
+        
+        let name = b"Harvard University".to_vec().try_into().unwrap();
+        assert_ok!(Did::register_institution(
+            RuntimeOrigin::signed(account),
+            name
+        ));
+        
+        assert_ok!(Did::verify_institution(
+            RuntimeOrigin::root(),
+            account
+        ));
+        
+        // Try to revoke from non-root account
+        assert_noop!(
+            Did::revoke_institution(
+                RuntimeOrigin::signed(account),
+                account
+            ),
+            DispatchError::BadOrigin
+        );
+    });
+}
+
+#[test]
+fn revoke_institution_fails_if_not_found() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        let account = 1u64;
+        
+        // Try to revoke non-existent institution
+        assert_noop!(
+            Did::revoke_institution(
+                RuntimeOrigin::root(),
+                account
+            ),
+            Error::<Test>::InstitutionNotFound
+        );
+    });
+}
+
+// ============================================================
+// INTEGRATION TESTS
+// ============================================================
+
+#[test]
+fn complete_did_lifecycle() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        let account = 1u64;
+        
+        // 1. Create DID
+        assert_ok!(Did::create_did(
+            RuntimeOrigin::signed(account),
+            [1u8; 32],
+            KeyType::Ed25519
+        ));
+        
+        // 2. Add multiple keys
+        assert_ok!(Did::add_public_key(
+            RuntimeOrigin::signed(account),
+            [2u8; 32],
+            KeyType::Sr25519
+        ));
+        
+        assert_ok!(Did::add_public_key(
+            RuntimeOrigin::signed(account),
+            [3u8; 32],
+            KeyType::Ecdsa
+        ));
+        
+        // 3. Register as institution
+        let name = b"MIT".to_vec().try_into().unwrap();
+        assert_ok!(Did::register_institution(
+            RuntimeOrigin::signed(account),
+            name
+        ));
+        
+        // 4. Verify institution
+        assert_ok!(Did::verify_institution(
+            RuntimeOrigin::root(),
+            account
+        ));
+        
+        // 5. Deactivate DID
+        assert_ok!(Did::deactivate_did(RuntimeOrigin::signed(account)));
+        
+        // 6. Reactivate DID
+        assert_ok!(Did::reactivate_did(RuntimeOrigin::signed(account)));
+        
+        // Verify final state
+        let did_doc = DidDocuments::<Test>::get(account).unwrap();
+        assert_eq!(did_doc.public_keys.len(), 3);
+        assert_eq!(did_doc.active, true);
+        
+        let institution = Institutions::<Test>::get(account).unwrap();
+        assert_eq!(institution.verified, true);
+    });
+}
+
