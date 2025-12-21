@@ -321,3 +321,16 @@ impl pallet_parachain_template::Config for Runtime {
 	type RuntimeEvent = RuntimeEvent;
 	type WeightInfo = pallet_parachain_template::weights::SubstrateWeight<Runtime>;
 }
+
+// Configure the DID pallet
+parameter_types! {
+    pub const MaxDocumentSize: u32 = 1024;
+    pub const MaxPublicKeys: u32 = 10;
+}
+
+impl did::Config for Runtime {
+    type RuntimeEvent = RuntimeEvent;
+    type MaxDocumentSize = MaxDocumentSize;
+    type MaxPublicKeys = MaxPublicKeys;
+    type WeightInfo = did::weights::SubstrateWeight;
+}

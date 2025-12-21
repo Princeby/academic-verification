@@ -10020,6 +10020,7 @@ name = "parachain-template-runtime"
 version = "0.1.0"
 dependencies = [
  "cumulus-pallet-parachain-system",
+ "did",
  "docify",
  "hex-literal",
  "log",

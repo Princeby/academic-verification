@@ -28,6 +28,9 @@ scale-info = { features = ["derive"], workspace = true }
 serde_json = { workspace = true, default-features = false, features = ["alloc"] }
 smallvec = { workspace = true, default-features = true }
 
+# Local pallets
+did = { path = "../pallets/did", default-features = false }
+
 [features]
 default = ["std"]
 std = [
@@ -39,6 +42,7 @@ std = [
 	"scale-info/std",
 	"serde_json/std",
 	"substrate-wasm-builder",
+    "did/std",
 ]
 
 runtime-benchmarks = [
@@ -46,12 +50,14 @@ runtime-benchmarks = [
 	"hex-literal",
 	"pallet-parachain-template/runtime-benchmarks",
 	"polkadot-sdk/runtime-benchmarks",
+    "did/runtime-benchmarks",
 ]
 
 try-runtime = [
 	"cumulus-pallet-parachain-system/try-runtime",
 	"pallet-parachain-template/try-runtime",
 	"polkadot-sdk/try-runtime",
+	"did/try-runtime",
 ]
 
 # Enable the metadata hash generation.
