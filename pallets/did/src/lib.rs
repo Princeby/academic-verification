@@ -1,12 +1,12 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 //! # DID Pallet
-//! 
+//!
 //! ## Overview
 //! This pallet implements Decentralized Identifiers (DIDs) for academic verification.
 
-pub use pallet::*;
 use frame::hashing;
+pub use pallet::*;
 
 #[cfg(test)]
 mod mock;
@@ -19,7 +19,6 @@ mod benchmarking;
 
 pub mod weights;
 pub use weights::*;
-
 
 #[frame::pallet]
 pub mod pallet {
@@ -34,11 +33,11 @@ pub mod pallet {
     pub trait Config: frame_system::Config {
         /// The overarching event type
         type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
-        
+
         /// Maximum size of institution name or document metadata
         #[pallet::constant]
         type MaxDocumentSize: Get<u32>;
-        
+
         /// Maximum number of public keys per DID
         #[pallet::constant]
         type MaxPublicKeys: Get<u32>;
@@ -47,19 +46,37 @@ pub mod pallet {
         type WeightInfo: WeightInfo;
     }
 
-
     //Events
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
     pub enum Event<T: Config> {
-        DidCreated { owner: T::AccountId },
-        DidUpdated { owner: T::AccountId },
-        DidDeactivated { owner: T::AccountId },
-        PublicKeyAdded { owner: T::AccountId, key_id: [u8; 32] },
-        PublicKeyRemoved { owner: T::AccountId, key_id: [u8; 32] },
-        InstitutionRegistered { did: T::AccountId, name: BoundedVec<u8, T::MaxDocumentSize> },
-        InstitutionVerified { did: T::AccountId },
-        InstitutionRevoked { did: T::AccountId },
+        DidCreated {
+            owner: T::AccountId,
+        },
+        DidUpdated {
+            owner: T::AccountId,
+        },
+        DidDeactivated {
+            owner: T::AccountId,
+        },
+        PublicKeyAdded {
+            owner: T::AccountId,
+            key_id: [u8; 32],
+        },
+        PublicKeyRemoved {
+            owner: T::AccountId,
+            key_id: [u8; 32],
+        },
+        InstitutionRegistered {
+            did: T::AccountId,
+            name: BoundedVec<u8, T::MaxDocumentSize>,
+        },
+        InstitutionVerified {
+            did: T::AccountId,
+        },
+        InstitutionRevoked {
+            did: T::AccountId,
+        },
     }
 
     //Storage
@@ -71,25 +88,36 @@ pub mod pallet {
         pub public_key: [u8; 32],
     }
 
-    #[derive(Clone, Copy, Encode, Decode, DecodeWithMemTracking, Eq, PartialEq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+    #[derive(
+        Clone,
+        Copy,
+        Encode,
+        Decode,
+        DecodeWithMemTracking,
+        Eq,
+        PartialEq,
+        RuntimeDebug,
+        TypeInfo,
+        MaxEncodedLen,
+    )]
     pub enum KeyType {
         Ed25519,
         Sr25519,
         Ecdsa,
     }
 
-      /// DID Document containing identity information
-      #[derive(Clone, Encode, Decode, Eq, PartialEq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
-      #[scale_info(skip_type_params(T))]
-      pub struct DidDocument<T: Config> {
+    /// DID Document containing identity information
+    #[derive(Clone, Encode, Decode, Eq, PartialEq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+    #[scale_info(skip_type_params(T))]
+    pub struct DidDocument<T: Config> {
         pub controller: T::AccountId,
         pub public_keys: BoundedVec<PublicKeyEntry, T::MaxPublicKeys>,
         pub created_at: BlockNumberFor<T>,
         pub updated_at: BlockNumberFor<T>,
         pub active: bool,
-      }
+    }
 
-      /// Institution registration information
+    /// Institution registration information
     #[derive(Clone, Encode, Decode, Eq, PartialEq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
     #[scale_info(skip_type_params(T))]
     pub struct Institution<T: Config> {
@@ -102,22 +130,14 @@ pub mod pallet {
     ///Storage of all DID documents, indexed by account ID
     #[pallet::storage]
     #[pallet::getter(fn did_documents)]
-    pub type DidDocuments<T: Config> = StorageMap<
-        _,
-        Blake2_128Concat,
-        T::AccountId,
-        DidDocument<T>,
-    >;
+    pub type DidDocuments<T: Config> =
+        StorageMap<_, Blake2_128Concat, T::AccountId, DidDocument<T>>;
 
     /// Storage of institution registrations
     #[pallet::storage]
     #[pallet::getter(fn institutions)]
-    pub type Institutions<T: Config> = StorageMap<
-        _,
-        Blake2_128Concat,
-        T::AccountId,
-        Institution<T>,
-    >;
+    pub type Institutions<T: Config> =
+        StorageMap<_, Blake2_128Concat, T::AccountId, Institution<T>>;
     //Errors
     #[pallet::error]
     pub enum Error<T> {
@@ -166,7 +186,8 @@ pub mod pallet {
             };
 
             let mut public_keys = BoundedVec::new();
-            public_keys.try_push(key_entry)
+            public_keys
+                .try_push(key_entry)
                 .map_err(|_| Error::<T>::TooManyPublicKeys)?;
 
             let did_doc = DidDocument {
@@ -181,7 +202,6 @@ pub mod pallet {
             Self::deposit_event(Event::DidCreated { owner: who });
 
             Ok(())
-
         }
 
         #[pallet::call_index(1)]
@@ -194,8 +214,7 @@ pub mod pallet {
             let who = ensure_signed(origin)?;
 
             DidDocuments::<T>::try_mutate(&who, |did_doc_opt| -> DispatchResult {
-                let did_doc = did_doc_opt.as_mut()
-                    .ok_or(Error::<T>::DidNotFound)?;
+                let did_doc = did_doc_opt.as_mut().ok_or(Error::<T>::DidNotFound)?;
 
                 ensure!(did_doc.controller == who, Error::<T>::NotAuthorized);
                 ensure!(did_doc.active, Error::<T>::DidInactive);
@@ -213,33 +232,30 @@ pub mod pallet {
                     public_key,
                 };
 
-                did_doc.public_keys.try_push(key_entry)
+                did_doc
+                    .public_keys
+                    .try_push(key_entry)
                     .map_err(|_| Error::<T>::TooManyPublicKeys)?;
 
                 did_doc.updated_at = frame_system::Pallet::<T>::block_number();
 
-                Self::deposit_event(Event::PublicKeyAdded { 
-                    owner: who.clone(), 
-                    key_id 
+                Self::deposit_event(Event::PublicKeyAdded {
+                    owner: who.clone(),
+                    key_id,
                 });
 
                 Ok(())
             })
         }
 
-
-       //Remove a public key from a DID
+        //Remove a public key from a DID
         #[pallet::call_index(2)]
         #[pallet::weight(T::WeightInfo::remove_public_key())]
-        pub fn remove_public_key(
-            origin: OriginFor<T>,
-            key_id: [u8; 32],
-        ) -> DispatchResult {
+        pub fn remove_public_key(origin: OriginFor<T>, key_id: [u8; 32]) -> DispatchResult {
             let who = ensure_signed(origin)?;
 
             DidDocuments::<T>::try_mutate(&who, |did_doc_opt| -> DispatchResult {
-                let did_doc = did_doc_opt.as_mut()
-                    .ok_or(Error::<T>::DidNotFound)?;
+                let did_doc = did_doc_opt.as_mut().ok_or(Error::<T>::DidNotFound)?;
 
                 ensure!(did_doc.controller == who, Error::<T>::NotAuthorized);
 
@@ -253,9 +269,9 @@ pub mod pallet {
 
                 did_doc.updated_at = frame_system::Pallet::<T>::block_number();
 
-                Self::deposit_event(Event::PublicKeyRemoved { 
-                    owner: who.clone(), 
-                    key_id 
+                Self::deposit_event(Event::PublicKeyRemoved {
+                    owner: who.clone(),
+                    key_id,
                 });
 
                 Ok(())
@@ -269,8 +285,7 @@ pub mod pallet {
             let who = ensure_signed(origin)?;
 
             DidDocuments::<T>::try_mutate(&who, |did_doc_opt| -> DispatchResult {
-                let did_doc = did_doc_opt.as_mut()
-                    .ok_or(Error::<T>::DidNotFound)?;
+                let did_doc = did_doc_opt.as_mut().ok_or(Error::<T>::DidNotFound)?;
 
                 ensure!(did_doc.controller == who, Error::<T>::NotAuthorized);
 
@@ -290,8 +305,7 @@ pub mod pallet {
             let who = ensure_signed(origin)?;
 
             DidDocuments::<T>::try_mutate(&who, |did_doc_opt| -> DispatchResult {
-                let did_doc = did_doc_opt.as_mut()
-                    .ok_or(Error::<T>::DidNotFound)?;
+                let did_doc = did_doc_opt.as_mut().ok_or(Error::<T>::DidNotFound)?;
 
                 ensure!(did_doc.controller == who, Error::<T>::NotAuthorized);
 
@@ -314,12 +328,12 @@ pub mod pallet {
             let who = ensure_signed(origin)?;
 
             ensure!(
-                !Institutions::<T>::contains_key(&who), 
+                !Institutions::<T>::contains_key(&who),
                 Error::<T>::InstitutionAlreadyRegistered
             );
 
             ensure!(
-                DidDocuments::<T>::contains_key(&who), 
+                DidDocuments::<T>::contains_key(&who),
                 Error::<T>::DidNotFound
             );
 
@@ -334,10 +348,7 @@ pub mod pallet {
 
             Institutions::<T>::insert(&who, institution);
 
-            Self::deposit_event(Event::InstitutionRegistered { 
-                did: who, 
-                name 
-            });
+            Self::deposit_event(Event::InstitutionRegistered { did: who, name });
 
             Ok(())
         }
@@ -352,13 +363,14 @@ pub mod pallet {
             ensure_root(origin)?;
 
             Institutions::<T>::try_mutate(&institution_did, |institution_opt| -> DispatchResult {
-                let institution = institution_opt.as_mut()
+                let institution = institution_opt
+                    .as_mut()
                     .ok_or(Error::<T>::InstitutionNotFound)?;
-                
+
                 institution.verified = true;
 
-                Self::deposit_event(Event::InstitutionVerified { 
-                    did: institution_did.clone() 
+                Self::deposit_event(Event::InstitutionVerified {
+                    did: institution_did.clone(),
                 });
 
                 Ok(())
@@ -375,19 +387,18 @@ pub mod pallet {
             ensure_root(origin)?;
 
             Institutions::<T>::try_mutate(&institution_did, |institution_opt| -> DispatchResult {
-                let institution = institution_opt.as_mut()
+                let institution = institution_opt
+                    .as_mut()
                     .ok_or(Error::<T>::InstitutionNotFound)?;
-                
+
                 institution.verified = false;
 
-                Self::deposit_event(Event::InstitutionRevoked { 
-                    did: institution_did.clone() 
+                Self::deposit_event(Event::InstitutionRevoked {
+                    did: institution_did.clone(),
                 });
 
                 Ok(())
             })
         }
-
-        
     }
 }
