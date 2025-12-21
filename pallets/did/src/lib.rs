@@ -184,8 +184,6 @@ pub mod pallet {
 
         }
 
-        //Add a new public key
-        /// Add a new public key to an existing DID
         #[pallet::call_index(1)]
         #[pallet::weight(T::WeightInfo::add_public_key())]
         pub fn add_public_key(
@@ -203,6 +201,7 @@ pub mod pallet {
                 ensure!(did_doc.active, Error::<T>::DidInactive);
 
                 let key_id = hashing::blake2_256(&public_key);
+
                 ensure!(
                     !did_doc.public_keys.iter().any(|k| k.key_id == key_id),
                     Error::<T>::PublicKeyAlreadyExists
@@ -228,7 +227,8 @@ pub mod pallet {
             })
         }
 
-        //Remove a public key from a DID
+
+       //Remove a public key from a DID
         #[pallet::call_index(2)]
         #[pallet::weight(T::WeightInfo::remove_public_key())]
         pub fn remove_public_key(
