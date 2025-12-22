@@ -317,6 +317,10 @@ mod runtime {
 	// DID Pallet
 	#[runtime::pallet_index(51)]
 	pub type Did = did;
+
+	// Credential Pallet
+	#[runtime::pallet_index(52)]
+	pub type Credential = credential;
 }
 
 #[docify::export(register_validate_block)]

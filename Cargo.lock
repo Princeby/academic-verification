@@ -2527,6 +2527,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "credential"
+version = "0.1.0"
+dependencies = [
+ "did",
+ "parity-scale-codec",
+ "polkadot-sdk-frame",
+ "scale-info",
+]
+
+[[package]]
 name = "crossbeam-deque"
 version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10019,6 +10029,7 @@ dependencies = [
 name = "parachain-template-runtime"
 version = "0.1.0"
 dependencies = [
+ "credential",
  "cumulus-pallet-parachain-system",
  "did",
  "docify",

@@ -30,6 +30,7 @@ smallvec = { workspace = true, default-features = true }
 
 # Local pallets
 did = { path = "../pallets/did", default-features = false }
+credential = { path = "../pallets/credential", default-features = false }
 
 [features]
 default = ["std"]
@@ -43,6 +44,7 @@ std = [
 	"serde_json/std",
 	"substrate-wasm-builder",
     "did/std",
+	"credential/std",
 ]
 
 runtime-benchmarks = [
@@ -51,6 +53,7 @@ runtime-benchmarks = [
 	"pallet-parachain-template/runtime-benchmarks",
 	"polkadot-sdk/runtime-benchmarks",
     "did/runtime-benchmarks",
+	"credential/runtime-benchmarks",
 ]
 
 try-runtime = [
@@ -58,6 +61,7 @@ try-runtime = [
 	"pallet-parachain-template/try-runtime",
 	"polkadot-sdk/try-runtime",
 	"did/try-runtime",
+	"credential/try-runtime",
 ]
 
 # Enable the metadata hash generation.
