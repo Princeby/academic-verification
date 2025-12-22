@@ -1,7 +1,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 //! # Credential Pallet
-//! 
+//!
 //! Academic credential issuance and verification
 
 pub use pallet::*;
@@ -11,7 +11,7 @@ pub use weights::*;
 
 #[frame::pallet]
 pub mod pallet {
-    use frame::{prelude::*, hashing};
+    use frame::{hashing, prelude::*};
 
     use crate::WeightInfo;
 
@@ -21,7 +21,17 @@ pub mod pallet {
     // ================== Credential Types ==================
 
     /// Types of credentials supported
-    #[derive(Clone, Encode, Decode, Eq, PartialEq, RuntimeDebug, TypeInfo, MaxEncodedLen,DecodeWithMemTracking)]
+    #[derive(
+        Clone,
+        Encode,
+        Decode,
+        Eq,
+        PartialEq,
+        RuntimeDebug,
+        TypeInfo,
+        MaxEncodedLen,
+        DecodeWithMemTracking,
+    )]
     pub enum CredentialType {
         /// Bachelor's degree
         Degree,
@@ -85,11 +95,11 @@ pub mod pallet {
     pub trait Config: frame_system::Config + did::Config {
         /// The overarching event type
         type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
-        
+
         /// Maximum size of credential metadata
         #[pallet::constant]
         type MaxMetadataSize: Get<u32>;
-        
+
         /// Maximum number of credentials per holder
         #[pallet::constant]
         type MaxCredentialsPerHolder: Get<u32>;
@@ -120,9 +130,7 @@ pub mod pallet {
             verified_by: T::AccountId,
         },
         /// Credential metadata was updated
-        CredentialMetadataUpdated {
-            credential_id: [u8; 32],
-        },
+        CredentialMetadataUpdated { credential_id: [u8; 32] },
     }
 
     #[pallet::error]
@@ -222,18 +230,18 @@ pub mod pallet {
             let issuer = ensure_signed(origin)?;
 
             // Verify issuer is a verified institution
-            let institution = did::Institutions::<T>::get(&issuer)
-                .ok_or(Error::<T>::IssuerNotVerified)?;
+            let institution =
+                did::Institutions::<T>::get(&issuer).ok_or(Error::<T>::IssuerNotVerified)?;
             ensure!(institution.verified, Error::<T>::IssuerNotVerified);
 
             // Verify issuer has active DID
-            let issuer_did = did::DidDocuments::<T>::get(&issuer)
-                .ok_or(Error::<T>::IssuerHasNoDid)?;
+            let issuer_did =
+                did::DidDocuments::<T>::get(&issuer).ok_or(Error::<T>::IssuerHasNoDid)?;
             ensure!(issuer_did.active, Error::<T>::DidNotActive);
 
             // Verify holder has DID
-            let holder_did = did::DidDocuments::<T>::get(&holder)
-                .ok_or(Error::<T>::HolderHasNoDid)?;
+            let holder_did =
+                did::DidDocuments::<T>::get(&holder).ok_or(Error::<T>::HolderHasNoDid)?;
             ensure!(holder_did.active, Error::<T>::DidNotActive);
 
             // Ensure credential hash doesn't already exist
@@ -269,14 +277,16 @@ pub mod pallet {
                     credential_id,
                     credential_type: credential_type.clone(),
                 };
-                credentials.try_push(reference)
+                credentials
+                    .try_push(reference)
                     .map_err(|_| Error::<T>::TooManyCredentials)?;
                 Ok(())
             })?;
 
             // Update issuer index
             CredentialsByIssuer::<T>::try_mutate(&issuer, |credentials| -> DispatchResult {
-                credentials.try_push(credential_id)
+                credentials
+                    .try_push(credential_id)
                     .map_err(|_| Error::<T>::TooManyCredentials)?;
                 Ok(())
             })?;
@@ -292,6 +302,108 @@ pub mod pallet {
                 issuer,
                 credential_type,
             });
+
+            Ok(())
+        }
+
+        /// Revoke a credential (only by issuer)
+        #[pallet::call_index(1)]
+        #[pallet::weight(<T as Config>::WeightInfo::revoke_credential())]
+        pub fn revoke_credential(origin: OriginFor<T>, credential_id: [u8; 32]) -> DispatchResult {
+            let revoker = ensure_signed(origin)?;
+
+            // Get credential
+            let mut credential =
+                Credentials::<T>::get(&credential_id).ok_or(Error::<T>::CredentialNotFound)?;
+
+            // Only issuer can revoke
+            ensure!(credential.issuer == revoker, Error::<T>::NotAuthorized);
+
+            // Ensure not already revoked
+            ensure!(
+                credential.status != CredentialStatus::Revoked,
+                Error::<T>::CredentialAlreadyRevoked
+            );
+
+            // Update status
+            credential.status = CredentialStatus::Revoked;
+            Credentials::<T>::insert(&credential_id, credential);
+
+            // Emit event
+            Self::deposit_event(Event::CredentialRevoked {
+                credential_id,
+                revoked_by: revoker,
+            });
+
+            Ok(())
+        }
+
+        /// Verify a credential by hash (read-only verification, emits event)
+        #[pallet::call_index(2)]
+        #[pallet::weight(<T as Config>::WeightInfo::verify_credential())]
+        pub fn verify_credential(
+            origin: OriginFor<T>,
+            credential_hash: [u8; 32],
+        ) -> DispatchResult {
+            let verifier = ensure_signed(origin)?;
+
+            // Look up credential by hash
+            let credential_id = CredentialByHash::<T>::get(&credential_hash)
+                .ok_or(Error::<T>::CredentialNotFound)?;
+
+            let credential =
+                Credentials::<T>::get(&credential_id).ok_or(Error::<T>::CredentialNotFound)?;
+
+            // Check if credential is active
+            ensure!(
+                credential.status == CredentialStatus::Active,
+                Error::<T>::CredentialNotActive
+            );
+
+            // Check expiration if set
+            if let Some(expires_at) = credential.expires_at {
+                let current_block = frame_system::Pallet::<T>::block_number();
+                ensure!(current_block <= expires_at, Error::<T>::CredentialExpired);
+            }
+
+            // Emit verification event
+            Self::deposit_event(Event::CredentialVerified {
+                credential_id,
+                verified_by: verifier,
+            });
+
+            Ok(())
+        }
+
+        /// Update credential metadata (only by issuer)
+        #[pallet::call_index(3)]
+        #[pallet::weight(<T as Config>::WeightInfo::update_credential_metadata())]
+        pub fn update_credential_metadata(
+            origin: OriginFor<T>,
+            credential_id: [u8; 32],
+            new_metadata: BoundedVec<u8, T::MaxMetadataSize>,
+        ) -> DispatchResult {
+            let updater = ensure_signed(origin)?;
+
+            // Get credential
+            let mut credential =
+                Credentials::<T>::get(&credential_id).ok_or(Error::<T>::CredentialNotFound)?;
+
+            // Only issuer can update metadata
+            ensure!(credential.issuer == updater, Error::<T>::NotAuthorized);
+
+            // Ensure credential is active
+            ensure!(
+                credential.status == CredentialStatus::Active,
+                Error::<T>::CredentialNotActive
+            );
+
+            // Update metadata
+            credential.metadata = new_metadata;
+            Credentials::<T>::insert(&credential_id, credential);
+
+            // Emit event
+            Self::deposit_event(Event::CredentialMetadataUpdated { credential_id });
 
             Ok(())
         }
