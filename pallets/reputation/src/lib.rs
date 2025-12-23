@@ -5,9 +5,13 @@
 
 pub use pallet::*;
 
+pub mod weights;
+pub use weights::WeightInfo;
+
 #[frame::pallet]
 pub mod pallet {
     use frame::prelude::*;
+    use crate::WeightInfo;
 
     #[pallet::pallet]
     pub struct Pallet<T>(_);
@@ -70,6 +74,8 @@ pub mod pallet {
 
         #[pallet::constant]
         type MaxCommentSize: Get<u32>;
+
+        type WeightInfo: WeightInfo;
     }
 
     #[pallet::event]
