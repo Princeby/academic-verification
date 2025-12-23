@@ -1,0 +1,37 @@
+[package]
+name = "reputation"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+
+[dependencies]
+codec = { features = ["derive"], workspace = true }
+scale-info = { features = ["derive"], workspace = true }
+frame = { features = ["experimental", "runtime"], workspace = true }
+
+# Local pallet dependencies
+did = { path = "../did", default-features = false }
+credential = { path = "../credential", default-features = false }
+
+[features]
+default = ["std"]
+std = [
+    "codec/std",
+    "scale-info/std",
+    "frame/std",
+    "did/std",
+    "credential/std",
+]
+runtime-benchmarks = [
+    "frame/runtime-benchmarks",
+    "did/runtime-benchmarks",
+    "credential/runtime-benchmarks",
+]
+try-runtime = [
+    "frame/try-runtime",
+    "did/try-runtime",
+    "credential/try-runtime",
+]
