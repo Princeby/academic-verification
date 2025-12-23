@@ -81,6 +81,51 @@ pub mod pallet {
         }
     }
 
+    /// Reputation scores for each account
+    #[pallet::storage]
+    #[pallet::getter(fn reputation_scores)]
+    pub type ReputationScores<T: Config> = StorageMap<
+        _,
+        Blake2_128Concat,
+        T::AccountId,
+        ReputationScore,
+        ValueQuery,
+    >;
+
+    /// Endorsements given by an account
+    #[pallet::storage]
+    #[pallet::getter(fn endorsements_given)]
+    pub type EndorsementsGiven<T: Config> = StorageMap<
+        _,
+        Blake2_128Concat,
+        T::AccountId,
+        BoundedVec<Endorsement<T>, T::MaxEndorsements>,
+        ValueQuery,
+    >;
+
+    /// Endorsements received by an account
+    #[pallet::storage]
+    #[pallet::getter(fn endorsements_received)]
+    pub type EndorsementsReceived<T: Config> = StorageMap<
+        _,
+        Blake2_128Concat,
+        T::AccountId,
+        BoundedVec<Endorsement<T>, T::MaxEndorsements>,
+        ValueQuery,
+    >;
+
+    /// Track if one account has already endorsed another
+    #[pallet::storage]
+    #[pallet::getter(fn has_endorsed)]
+    pub type HasEndorsed<T: Config> = StorageDoubleMap<
+        _,
+        Blake2_128Concat,
+        T::AccountId, // endorser
+        Blake2_128Concat,
+        T::AccountId, // endorsee
+        bool,
+        ValueQuery,
+    >;
 
 
 
