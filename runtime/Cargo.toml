@@ -31,6 +31,7 @@ smallvec = { workspace = true, default-features = true }
 # Local pallets
 did = { path = "../pallets/did", default-features = false }
 credential = { path = "../pallets/credential", default-features = false }
+reputation = { path = "../pallets/reputation", default-features = false }
 
 [features]
 default = ["std"]
@@ -45,6 +46,7 @@ std = [
 	"substrate-wasm-builder",
     "did/std",
 	"credential/std",
+	"reputation/std",
 ]
 
 runtime-benchmarks = [
@@ -54,6 +56,7 @@ runtime-benchmarks = [
 	"polkadot-sdk/runtime-benchmarks",
     "did/runtime-benchmarks",
 	"credential/runtime-benchmarks",
+	"reputation/runtime-benchmarks",
 ]
 
 try-runtime = [
@@ -62,6 +65,7 @@ try-runtime = [
 	"polkadot-sdk/try-runtime",
 	"did/try-runtime",
 	"credential/try-runtime",
+	"reputation/try-runtime",
 ]
 
 # Enable the metadata hash generation.

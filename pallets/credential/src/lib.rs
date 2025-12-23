@@ -19,6 +19,8 @@ pub use weights::*;
 pub mod pallet {
     use frame::{hashing, prelude::*};
 
+    pub use scale_info::prelude::vec::Vec;
+
     use crate::WeightInfo;
 
     #[pallet::pallet]

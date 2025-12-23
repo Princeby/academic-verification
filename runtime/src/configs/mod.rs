@@ -334,3 +334,29 @@ impl did::Config for Runtime {
     type MaxPublicKeys = MaxPublicKeys;
     type WeightInfo = did::weights::SubstrateWeight;
 }
+
+// Configure the Credential pallet
+parameter_types! {
+    pub const MaxMetadataSize: u32 = 512;
+    pub const MaxCredentialsPerHolder: u32 = 100;
+}
+
+impl credential::Config for Runtime {
+    type RuntimeEvent = RuntimeEvent;
+    type MaxMetadataSize = MaxMetadataSize;
+    type MaxCredentialsPerHolder = MaxCredentialsPerHolder;
+    type WeightInfo = credential::weights::SubstrateWeight;
+}
+
+// Configure the Reputation pallet
+parameter_types! {
+    pub const MaxEndorsements: u32 = 50;
+    pub const MaxCommentSize: u32 = 256;
+}
+
+impl reputation::Config for Runtime {
+    type RuntimeEvent = RuntimeEvent;
+    type MaxEndorsements = MaxEndorsements;
+    type MaxCommentSize = MaxCommentSize;
+    type WeightInfo = reputation::weights::SubstrateWeight;
+}

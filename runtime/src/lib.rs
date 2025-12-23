@@ -321,6 +321,10 @@ mod runtime {
 	// Credential Pallet
 	#[runtime::pallet_index(52)]
 	pub type Credential = credential;
+
+	// Reputation Pallet
+	#[runtime::pallet_index(53)]
+	pub type Reputation = reputation;
 }
 
 #[docify::export(register_validate_block)]

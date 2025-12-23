@@ -10038,6 +10038,7 @@ dependencies = [
  "pallet-parachain-template",
  "parity-scale-codec",
  "polkadot-sdk 2503.0.1",
+ "reputation",
  "scale-info",
  "serde_json",
  "smallvec",
@@ -12982,6 +12983,17 @@ name = "regex-syntax"
 version = "0.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b15c43186be67a4fd63bee50d0303afffcef381492ebe2c5d87f324e1b8815c"
+
+[[package]]
+name = "reputation"
+version = "0.1.0"
+dependencies = [
+ "credential",
+ "did",
+ "parity-scale-codec",
+ "polkadot-sdk-frame",
+ "scale-info",
+]
 
 [[package]]
 name = "resolv-conf"
