@@ -12,6 +12,54 @@ pub mod pallet {
     #[pallet::pallet]
     pub struct Pallet<T>(_);
 
+    #[derive(Clone, Encode, Decode, Eq, PartialEq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+    pub enum EndorsementType {
+        /// General professional endorsement
+        Professional,
+        /// Academic excellence endorsement
+        Academic,
+        /// Research contribution endorsement
+        Research,
+        /// Teaching quality endorsement
+        Teaching,
+        /// Innovation endorsement
+        Innovation,
+    }
+
+    /// Reputation score breakdown
+    #[derive(Clone, Encode, Decode, Eq, PartialEq, RuntimeDebug, TypeInfo, MaxEncodedLen, Default)]
+    pub struct ReputationScore {
+        /// Total credentials issued
+        pub credentials_issued: u32,
+        /// Total credentials verified
+        pub credentials_verified: u32,
+        /// Number of endorsements received
+        pub endorsements_received: u32,
+        /// Number of endorsements given
+        pub endorsements_given: u32,
+        /// Overall reputation score (0-1000)
+        pub total_score: u32,
+    }
+
+    /// Individual endorsement record
+    #[derive(Clone, Encode, Decode, Eq, PartialEq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+    #[scale_info(skip_type_params(T))]
+    pub struct Endorsement<T: Config> {
+        /// Who gave the endorsement
+        pub endorser: T::AccountId,
+        /// Who received the endorsement
+        pub endorsee: T::AccountId,
+        /// Type of endorsement
+        pub endorsement_type: EndorsementType,
+        /// Optional comment
+        pub comment: BoundedVec<u8, T::MaxCommentSize>,
+        /// When it was given
+        pub created_at: BlockNumberFor<T>,
+        /// Weight/strength of endorsement (1-10)
+        pub weight: u8,
+    }
+
+
     #[pallet::config]
     pub trait Config: frame_system::Config + did::Config + credential::Config {
 
