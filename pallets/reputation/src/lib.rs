@@ -12,7 +12,7 @@ pub mod pallet {
     #[pallet::pallet]
     pub struct Pallet<T>(_);
 
-    #[derive(Clone, Encode, Decode, Eq, PartialEq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+    #[derive(Clone, Encode, Decode, Eq, PartialEq, RuntimeDebug, TypeInfo, MaxEncodedLen, DecodeWithMemTracking)]
     pub enum EndorsementType {
         /// General professional endorsement
         Professional,
@@ -78,8 +78,49 @@ pub mod pallet {
         EndorsementCreated {
             endorser: T::AccountId,
             endorsee: T::AccountId,
+            endorsement_type: EndorsementType,
+            weight: u8,
+        },
+        EndorsementRemoved {
+            endorser: T::AccountId,
+            endorsee: T::AccountId,
+        },
+        ReputationUpdated {
+            account: T::AccountId,
+            new_score: u32,
+        },
+        CredentialIssuanceRecorded {
+            issuer: T::AccountId,
+        },
+        CredentialVerificationRecorded {
+            verifier: T::AccountId,
         }
     }
+
+    // ================== Errors ==================
+
+    #[pallet::error]
+    pub enum Error<T> {
+        /// Account has no DID
+        NoDid,
+        /// DID is not active
+        DidNotActive,
+        /// Already endorsed this account
+        AlreadyEndorsed,
+        /// Cannot endorse yourself
+        CannotEndorseSelf,
+        /// Too many endorsements
+        TooManyEndorsements,
+        /// Endorsement not found
+        EndorsementNotFound,
+        /// Invalid endorsement weight (must be 1-10)
+        InvalidWeight,
+        /// Comment too large
+        CommentTooLarge,
+        /// Account is not a verified institution
+        NotVerifiedInstitution,
+    }
+
 
     /// Reputation scores for each account
     #[pallet::storage]
