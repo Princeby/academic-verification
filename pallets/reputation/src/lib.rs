@@ -73,7 +73,7 @@ pub mod pallet {
         type MaxEndorsements: Get<u32>;
 
         #[pallet::constant]
-        type MaxCommentSize: Get<u32>;
+        type MaxCommentSize: Get<u32> + Clone;
 
         type WeightInfo: WeightInfo;
     }
@@ -173,7 +173,115 @@ pub mod pallet {
         bool,
         ValueQuery,
     >;
+    // ================== Dispatchable Functions ==================
 
+    #[pallet::call]
+    impl<T: Config> Pallet<T> {
+        /// Create an endorsement for another account
+        ///
+        /// # Arguments
+        /// * `origin` - Must have an active DID
+        /// * `endorsee` - Account to endorse
+        /// * `endorsement_type` - Type of endorsement
+        /// * `comment` - Optional comment
+        /// * `weight` - Strength of endorsement (1-10)
+        #[pallet::call_index(0)]
+        #[pallet::weight(<T as Config>::WeightInfo::endorse())]
 
+        pub fn endorse(
+            origin: OriginFor<T>,
+            endorsee: T::AccountId,
+            endorsement_type: EndorsementType,
+            comment: BoundedVec<u8, T::MaxCommentSize>,
+            weight: u8,
+        ) -> DispatchResult {
+            let endorser = ensure_signed(origin)?;
+
+            // Cannot endorse yourself
+            ensure!(endorser != endorsee, Error::<T>::CannotEndorseSelf);
+
+            // Validate weight (1-10)
+            ensure!(weight >= 1 && weight <= 10, Error::<T>::InvalidWeight);
+
+            // Check endorser has active DID
+            let endorser_did = did::DidDocuments::<T>::get(&endorser)
+                .ok_or(Error::<T>::NoDid)?;
+            ensure!(endorser_did.active, Error::<T>::DidNotActive);
+
+            // Check endorsee has active DID
+            let endorsee_did = did::DidDocuments::<T>::get(&endorsee)
+                .ok_or(Error::<T>::NoDid)?;
+            ensure!(endorsee_did.active, Error::<T>::DidNotActive);
+
+            // Check if already endorsed
+            ensure!(
+                !HasEndorsed::<T>::get(&endorser, &endorsee),
+                Error::<T>::AlreadyEndorsed
+            );
+
+            // Create endorsement
+            let endorsement = Endorsement {
+                endorser: endorser.clone(),
+                endorsee: endorsee.clone(),
+                endorsement_type: endorsement_type.clone(),
+                comment,
+                created_at: frame_system::Pallet::<T>::block_number(),
+                weight,
+            };
+
+            // Add to endorser's given list
+            EndorsementsGiven::<T>::try_mutate(&endorser, |endorsements| -> DispatchResult {
+                endorsements.try_push(endorsement.clone())
+                    .map_err(|_| Error::<T>::TooManyEndorsements)?;
+                Ok(())
+            })?;
+
+            // Add to endorsee's received list
+            EndorsementsReceived::<T>::try_mutate(&endorsee, |endorsements| -> DispatchResult {
+                endorsements.try_push(endorsement)
+                    .map_err(|_| Error::<T>::TooManyEndorsements)?;
+                Ok(())
+            })?;
+
+            // Mark as endorsed
+            HasEndorsed::<T>::insert(&endorser, &endorsee, true);
+
+            // Update reputation scores
+            ReputationScores::<T>::mutate(&endorser, |score| {
+                score.endorsements_given = score.endorsements_given.saturating_add(1);
+            });
+
+            ReputationScores::<T>::mutate(&endorsee, |score| {
+                score.endorsements_received = score.endorsements_received.saturating_add(1);
+                // Recalculate total score
+                score.total_score = Self::calculate_reputation_score(&score);
+            });
+
+            Self::deposit_event(Event::EndorsementCreated {
+                endorser,
+                endorsee,
+                endorsement_type,
+                weight,
+            });
+
+            Ok(())
+        }
+    }
+
+    // ================== Helper Functions ==================
+
+    impl<T: Config> Pallet<T> {
+        /// Calculate total reputation score
+        fn calculate_reputation_score(score: &ReputationScore) -> u32 {
+            let credentials_score = score.credentials_issued.saturating_mul(10);
+            let verification_score = score.credentials_verified.saturating_mul(5);
+            let endorsement_score = score.endorsements_received.saturating_mul(20);
+            
+            credentials_score
+                .saturating_add(verification_score)
+                .saturating_add(endorsement_score)
+                .min(1000) // Cap at 1000
+        }
+    }
 
 }
