@@ -266,6 +266,146 @@ pub mod pallet {
 
             Ok(())
         }
+
+        /// Remove an endorsement you previously gave
+        ///
+        /// # Arguments
+        /// * `origin` - Must be the endorser
+        /// * `endorsee` - Account that was endorsed
+        #[pallet::call_index(1)]
+        #[pallet::weight(<T as Config>::WeightInfo::remove_endorsement())]
+        pub fn remove_endorsement(
+            origin: OriginFor<T>,
+            endorsee: T::AccountId,
+        ) -> DispatchResult {
+            let endorser = ensure_signed(origin)?;
+
+            // Check if endorsement exists
+            ensure!(
+                HasEndorsed::<T>::get(&endorser, &endorsee),
+                Error::<T>::EndorsementNotFound
+            );
+
+            // Remove from endorser's given list
+            EndorsementsGiven::<T>::mutate(&endorser, |endorsements| {
+                endorsements.retain(|e| e.endorsee != endorsee);
+            });
+
+            // Remove from endorsee's received list
+            EndorsementsReceived::<T>::mutate(&endorsee, |endorsements| {
+                endorsements.retain(|e| e.endorser != endorser);
+            });
+
+            // Remove endorsement flag
+            HasEndorsed::<T>::remove(&endorser, &endorsee);
+
+            // Update reputation scores
+            ReputationScores::<T>::mutate(&endorser, |score| {
+                score.endorsements_given = score.endorsements_given.saturating_sub(1);
+            });
+
+            ReputationScores::<T>::mutate(&endorsee, |score| {
+                score.endorsements_received = score.endorsements_received.saturating_sub(1);
+                score.total_score = Self::calculate_reputation_score(&score);
+            });
+
+            Self::deposit_event(Event::EndorsementRemoved {
+                endorser,
+                endorsee,
+            });
+
+            Ok(())
+        }
+
+        /// Record that an institution issued a credential
+        /// This should be called by the credential pallet
+        ///
+        /// # Arguments
+        /// * `origin` - Root origin (called by credential pallet)
+        /// * `issuer` - The institution that issued the credential
+        #[pallet::call_index(2)]
+        #[pallet::weight(<T as Config>::WeightInfo::update_reputation_score())]
+        pub fn record_credential_issuance(
+            origin: OriginFor<T>,
+            issuer: T::AccountId,
+        ) -> DispatchResult {
+            ensure_root(origin)?;
+
+            // Update issuer's reputation
+            ReputationScores::<T>::mutate(&issuer, |score| {
+                score.credentials_issued = score.credentials_issued.saturating_add(1);
+                score.total_score = Self::calculate_reputation_score(&score);
+            });
+
+            Self::deposit_event(Event::CredentialIssuanceRecorded {
+                issuer: issuer.clone(),
+            });
+
+            let new_score = ReputationScores::<T>::get(&issuer).total_score;
+            Self::deposit_event(Event::ReputationUpdated {
+                account: issuer,
+                new_score,
+            });
+
+            Ok(())
+        }
+
+        /// Record that someone verified a credential
+        /// This can be called by anyone or the credential pallet
+        ///
+        /// # Arguments
+        /// * `origin` - The account that verified a credential
+        #[pallet::call_index(3)]
+        #[pallet::weight(<T as Config>::WeightInfo::update_reputation_score())]
+        pub fn record_credential_verification(
+            origin: OriginFor<T>,
+        ) -> DispatchResult {
+            let verifier = ensure_signed(origin)?;
+
+            // Update verifier's reputation
+            ReputationScores::<T>::mutate(&verifier, |score| {
+                score.credentials_verified = score.credentials_verified.saturating_add(1);
+                score.total_score = Self::calculate_reputation_score(&score);
+            });
+
+            Self::deposit_event(Event::CredentialVerificationRecorded {
+                verifier: verifier.clone(),
+            });
+
+            let new_score = ReputationScores::<T>::get(&verifier).total_score;
+            Self::deposit_event(Event::ReputationUpdated {
+                account: verifier,
+                new_score,
+            });
+
+            Ok(())
+        }
+
+        /// Manually update reputation score (for admin/governance)
+        ///
+        /// # Arguments
+        /// * `origin` - Root origin
+        /// * `account` - Account to update
+        #[pallet::call_index(4)]
+        #[pallet::weight(<T as Config>::WeightInfo::update_reputation_score())]
+        pub fn update_reputation_score(
+            origin: OriginFor<T>,
+            account: T::AccountId,
+        ) -> DispatchResult {
+            ensure_root(origin)?;
+
+            ReputationScores::<T>::mutate(&account, |score| {
+                score.total_score = Self::calculate_reputation_score(&score);
+            });
+
+            let new_score = ReputationScores::<T>::get(&account).total_score;
+            Self::deposit_event(Event::ReputationUpdated {
+                account,
+                new_score,
+            });
+
+            Ok(())
+        }
     }
 
     // ================== Helper Functions ==================
