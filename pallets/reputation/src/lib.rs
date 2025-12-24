@@ -62,7 +62,7 @@ pub mod pallet {
         /// Type of endorsement
         pub endorsement_type: EndorsementType,
         /// Optional comment
-        pub comment: BoundedVec<u8, T::MaxCommentSize>,
+        pub comment: BoundedVec<u8, ConstU32<256>>,
         /// When it was given
         pub created_at: BlockNumberFor<T>,
         /// Weight/strength of endorsement (1-10)
@@ -79,7 +79,7 @@ pub mod pallet {
         type MaxEndorsements: Get<u32>;
 
         #[pallet::constant]
-        type MaxCommentSize: Get<u32> + Clone;
+        type MaxCommentSize: Get<u32>;
 
         type WeightInfo: WeightInfo;
     }
@@ -198,10 +198,16 @@ pub mod pallet {
             origin: OriginFor<T>,
             endorsee: T::AccountId,
             endorsement_type: EndorsementType,
-            comment: BoundedVec<u8, T::MaxCommentSize>,
+            comment: BoundedVec<u8, ConstU32<256>>,
             weight: u8,
         ) -> DispatchResult {
             let endorser = ensure_signed(origin)?;
+
+            // Validate comment size
+            ensure!(
+                comment.len() <= T::MaxCommentSize::get() as usize,
+                Error::<T>::CommentTooLarge
+            );
 
             // Cannot endorse yourself
             ensure!(endorser != endorsee, Error::<T>::CannotEndorseSelf);

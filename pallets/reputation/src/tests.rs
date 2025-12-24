@@ -21,7 +21,7 @@ fn endorse_works() {
         create_did_for_account(INSTITUTION_A);
         create_did_for_account(INSTITUTION_B);
 
-        let comment: BoundedVec<u8, MaxCommentSize> = 
+        let comment: BoundedVec<u8, ConstU32<256>> = 
             b"Excellent research contributions".to_vec().try_into().unwrap();
 
         // Create endorsement
@@ -74,7 +74,7 @@ fn endorse_fails_if_endorser_has_no_did() {
         
         create_did_for_account(INSTITUTION_B);
 
-        let comment: BoundedVec<u8, MaxCommentSize> = 
+        let comment: BoundedVec<u8, ConstU32<256>> = 
             b"Comment".to_vec().try_into().unwrap();
 
         // Should fail because endorser has no DID
@@ -98,7 +98,7 @@ fn endorse_fails_if_endorsee_has_no_did() {
         
         create_did_for_account(INSTITUTION_A);
 
-        let comment: BoundedVec<u8, MaxCommentSize> = 
+        let comment: BoundedVec<u8, ConstU32<256>> = 
             b"Comment".to_vec().try_into().unwrap();
 
         // Should fail because endorsee has no DID
@@ -126,7 +126,7 @@ fn endorse_fails_if_did_inactive() {
         // Deactivate institution B's DID
         assert_ok!(Did::deactivate_did(RuntimeOrigin::signed(INSTITUTION_B)));
 
-        let comment: BoundedVec<u8, MaxCommentSize> = 
+        let comment: BoundedVec<u8, ConstU32<256>> = 
             b"Comment".to_vec().try_into().unwrap();
 
         // Should fail because endorsee's DID is inactive
@@ -150,7 +150,7 @@ fn endorse_fails_for_self_endorsement() {
         
         create_did_for_account(INSTITUTION_A);
 
-        let comment: BoundedVec<u8, MaxCommentSize> = 
+        let comment: BoundedVec<u8, ConstU32<256>> = 
             b"I'm great!".to_vec().try_into().unwrap();
 
         // Should fail - cannot endorse yourself
@@ -175,7 +175,7 @@ fn endorse_fails_if_already_endorsed() {
         create_did_for_account(INSTITUTION_A);
         create_did_for_account(INSTITUTION_B);
 
-        let comment: BoundedVec<u8, MaxCommentSize> = 
+        let comment: BoundedVec<u8, ConstU32<256>> = 
             b"Good work".to_vec().try_into().unwrap();
 
         // First endorsement succeeds
@@ -209,7 +209,7 @@ fn endorse_fails_for_invalid_weight() {
         create_did_for_account(INSTITUTION_A);
         create_did_for_account(INSTITUTION_B);
 
-        let comment: BoundedVec<u8, MaxCommentSize> = 
+        let comment: BoundedVec<u8, ConstU32<256>> = 
             b"Comment".to_vec().try_into().unwrap();
 
         // Weight 0 should fail
@@ -247,7 +247,7 @@ fn multiple_endorsements_from_different_accounts() {
         create_did_for_account(INSTITUTION_B);
         create_did_for_account(INSTITUTION_C);
 
-        let comment: BoundedVec<u8, MaxCommentSize> = 
+        let comment: BoundedVec<u8, ConstU32<256>> = 
             b"Great!".to_vec().try_into().unwrap();
 
         // Institution A endorses B
@@ -496,7 +496,7 @@ fn reputation_score_calculation_is_correct() {
         // Receive 5 endorsements (5 * 20 = 100)
         for endorser in endorser_accounts {
             create_did_for_account(endorser);
-            let comment: BoundedVec<u8, MaxCommentSize> = 
+            let comment: BoundedVec<u8, ConstU32<256>> = 
                 b"Great!".to_vec().try_into().unwrap();
             assert_ok!(Reputation::endorse(
                 RuntimeOrigin::signed(endorser),
@@ -555,7 +555,7 @@ fn update_reputation_score_manually_works() {
         for i in 0..10 {
             let endorser = 30 + i;
             create_did_for_account(endorser);
-            let comment: BoundedVec<u8, MaxCommentSize> = 
+            let comment: BoundedVec<u8, ConstU32<256>> = 
                 b"Great!".to_vec().try_into().unwrap();
             assert_ok!(Reputation::endorse(
                 RuntimeOrigin::signed(endorser),
@@ -583,6 +583,7 @@ fn update_reputation_score_manually_works() {
         assert_eq!(updated_score.total_score, 400);
     });
 }
+
 #[test]
 fn update_reputation_score_fails_for_non_root() {
     new_test_ext().execute_with(|| {
@@ -620,7 +621,7 @@ fn complete_reputation_lifecycle() {
         }
 
         // Institution B endorses Institution A
-        let comment: BoundedVec<u8, MaxCommentSize> = 
+        let comment: BoundedVec<u8, ConstU32<256>> = 
             b"Excellent partner institution".to_vec().try_into().unwrap();
         assert_ok!(Reputation::endorse(
             RuntimeOrigin::signed(INSTITUTION_B),
@@ -675,7 +676,7 @@ fn endorsement_types_are_stored_correctly() {
             let endorser = 10 + i as u64;
             create_did_for_account(endorser);
             
-            let comment: BoundedVec<u8, MaxCommentSize> = 
+            let comment: BoundedVec<u8, ConstU32<256>> = 
                 format!("Type {}", i).as_bytes().to_vec().try_into().unwrap();
 
             assert_ok!(Reputation::endorse(
@@ -719,7 +720,7 @@ fn high_reputation_institution_example() {
             let endorser = 100 + i;
             create_did_for_account(endorser);
             
-            let comment: BoundedVec<u8, MaxCommentSize> = 
+            let comment: BoundedVec<u8, ConstU32<256>> = 
                 b"Excellent!".to_vec().try_into().unwrap();
 
             assert_ok!(Reputation::endorse(

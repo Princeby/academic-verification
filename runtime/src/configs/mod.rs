@@ -360,3 +360,5 @@ impl reputation::Config for Runtime {
     type MaxCommentSize = MaxCommentSize;
     type WeightInfo = reputation::weights::SubstrateWeight;
 }
+
+

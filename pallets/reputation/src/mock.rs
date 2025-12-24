@@ -67,12 +67,8 @@ impl credential::Config for Test {
 }
 
 // Reputation pallet configuration
-
 parameter_types! {
-    #[derive(Clone)]
     pub const MaxEndorsements: u32 = 50;
-
-    #[derive(Clone)]
     pub const MaxCommentSize: u32 = 256;
 }
 
@@ -130,14 +126,12 @@ pub fn setup_verified_institution(account: u64, name: &str) {
     verify_institution(account);
 }
 
-/// Issue a credential (helper for testing reputation updates)
-
 /// Create an endorsement with default parameters
 pub fn create_test_endorsement(endorser: u64, endorsee: u64) {
     create_did_for_account(endorser);
     create_did_for_account(endorsee);
 
-    let comment: BoundedVec<u8, MaxCommentSize> = 
+    let comment: BoundedVec<u8, ConstU32<256>> = 
         b"Great institution!".to_vec().try_into().unwrap();
 
     assert_ok!(Reputation::endorse(
