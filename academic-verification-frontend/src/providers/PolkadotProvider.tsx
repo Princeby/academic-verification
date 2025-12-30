@@ -1,9 +1,10 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import type { ApiPromise } from '@polkadot/api';
 import { toast } from 'sonner';
 import { CHAIN_CONFIG } from '@/lib/utils/constants';
 
 interface PolkadotContextType {
-  api: any | null;
+  api: ApiPromise | null;
   isReady: boolean;
   error: string | null;
 }
@@ -21,39 +22,45 @@ interface PolkadotProviderProps {
 }
 
 export function PolkadotProvider({ children }: PolkadotProviderProps) {
-  const [api, setApi] = useState<any | null>(null);
+  const [api, setApi] = useState<ApiPromise | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
+    let apiInstance: ApiPromise | null = null;
 
     async function initApi() {
       try {
-        // Dynamically import Polkadot to avoid build issues
+        // Dynamic import to avoid build issues
         const { ApiPromise, WsProvider } = await import('@polkadot/api');
         
-        console.log('🔗 Attempting to connect to blockchain...');
+        console.log('🔗 Connecting to blockchain...');
         console.log('📍 Endpoint:', CHAIN_CONFIG.WS_PROVIDER);
         
         const wsProvider = new WsProvider(CHAIN_CONFIG.WS_PROVIDER);
         
-        // Add timeout
+        // Connection timeout handler
         const timeout = setTimeout(() => {
           if (!isReady && isMounted) {
             console.warn('⚠️ Connection timeout - continuing without blockchain');
             setError('Could not connect to blockchain node (timeout)');
-            toast.warning('Running without blockchain connection', {
-              description: 'Some features may be limited'
+            toast.warning('Running in demo mode', {
+              description: 'Connect to a node to enable blockchain features'
             });
           }
         }, 5000);
 
-        const apiInstance = await ApiPromise.create({ provider: wsProvider });
+        // Create API instance
+        apiInstance = await ApiPromise.create({ 
+          provider: wsProvider,
+          throwOnConnect: false,
+        });
 
         clearTimeout(timeout);
 
         if (isMounted) {
+          await apiInstance.isReady;
           setApi(apiInstance);
           setIsReady(true);
           console.log('✅ Connected to blockchain');
@@ -62,32 +69,31 @@ export function PolkadotProvider({ children }: PolkadotProviderProps) {
       } catch (err) {
         console.error('❌ Blockchain connection error:', err);
         if (isMounted) {
-          const errorMessage = err instanceof Error ? err.message : 'Failed to connect to blockchain';
+          const errorMessage = err instanceof Error ? err.message : 'Failed to connect';
           setError(errorMessage);
           
-          console.warn('⚠️ Running in offline mode - blockchain features disabled');
-          toast.info('Running in offline mode', {
+          toast.info('Running in demo mode', {
             description: 'UI is functional, blockchain features disabled'
           });
         }
       }
     }
 
-    // Delay initialization to avoid blocking UI
+    // Delay initialization slightly to let UI render first
     const timer = setTimeout(() => {
       initApi();
-    }, 1000);
+    }, 1500);
 
     return () => {
       isMounted = false;
       clearTimeout(timer);
-      if (api) {
-        console.log('🔌 Disconnecting from blockchain...');
-        api.disconnect().catch(console.error);
+      if (apiInstance) {
+        apiInstance.disconnect().catch(console.error);
       }
     };
   }, []);
 
+  // Always render children, even if connection fails
   return (
     <PolkadotContext.Provider value={{ api, isReady, error }}>
       {children}

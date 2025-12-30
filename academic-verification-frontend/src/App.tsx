@@ -1,9 +1,8 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
-// TEMPORARILY DISABLED - Polkadot providers causing issues
-// import { PolkadotProvider } from './providers/PolkadotProvider';
-// import { WalletProvider } from './providers/WalletProvider';
+import { PolkadotProvider } from './providers/PolkadotProvider';
+import { WalletProvider } from './providers/WalletProvider';
 import MainLayout from './components/layout/MainLayout';
 import Home from './pages/Home';
 import Dashboard from './pages/Dashboard';
@@ -23,24 +22,25 @@ const queryClient = new QueryClient({
 });
 
 function App() {
-  console.log('✅ App.tsx loaded');
-  
   return (
     <QueryClientProvider client={queryClient}>
-      {/* Polkadot and Wallet providers temporarily disabled */}
-      <Router>
-        <MainLayout>
-          <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/credentials" element={<Credentials />} />
-            <Route path="/institution" element={<Institution />} />
-            <Route path="/verify" element={<Verify />} />
-            <Route path="/institutions" element={<Institutions />} />
-          </Routes>
-        </MainLayout>
-      </Router>
-      <Toaster position="top-right" richColors />
+      <PolkadotProvider>
+        <WalletProvider>
+          <Router>
+            <MainLayout>
+              <Routes>
+                <Route path="/" element={<Home />} />
+                <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/credentials" element={<Credentials />} />
+                <Route path="/institution" element={<Institution />} />
+                <Route path="/verify" element={<Verify />} />
+                <Route path="/institutions" element={<Institutions />} />
+              </Routes>
+            </MainLayout>
+          </Router>
+          <Toaster position="top-right" richColors />
+        </WalletProvider>
+      </PolkadotProvider>
     </QueryClientProvider>
   );
 }
