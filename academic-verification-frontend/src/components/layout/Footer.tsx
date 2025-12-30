@@ -6,7 +6,6 @@ export default function Footer() {
     <footer className="border-t border-border bg-background">
       <div className="container mx-auto px-4 py-6">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-          {/* About */}
           <div>
             <h3 className="font-semibold text-sm mb-3">About</h3>
             <p className="text-sm text-muted-foreground">
@@ -14,7 +13,6 @@ export default function Footer() {
             </p>
           </div>
 
-          {/* Quick Links */}
           <div>
             <h3 className="font-semibold text-sm mb-3">Quick Links</h3>
             <ul className="space-y-2 text-sm">
@@ -36,7 +34,6 @@ export default function Footer() {
             </ul>
           </div>
 
-          {/* Resources */}
           <div>
             <h3 className="font-semibold text-sm mb-3">Resources</h3>
             <ul className="space-y-2 text-sm">
@@ -52,25 +49,18 @@ export default function Footer() {
                 </a>
               </li>
               <li>
-                <a 
-                  href="#" 
-                  className="text-muted-foreground hover:text-foreground transition-colors"
-                >
+                <a href="#" className="text-muted-foreground hover:text-foreground transition-colors">
                   Privacy Policy
                 </a>
               </li>
               <li>
-                <a 
-                  href="#" 
-                  className="text-muted-foreground hover:text-foreground transition-colors"
-                >
+                <a href="#" className="text-muted-foreground hover:text-foreground transition-colors">
                   Terms of Service
                 </a>
               </li>
             </ul>
           </div>
 
-          {/* Social */}
           <div>
             <h3 className="font-semibold text-sm mb-3">Community</h3>
             <div className="flex space-x-4">
@@ -94,7 +84,6 @@ export default function Footer() {
           </div>
         </div>
 
-        {/* Bottom Bar */}
         <div className="mt-8 pt-6 border-t border-border flex flex-col sm:flex-row justify-between items-center text-sm text-muted-foreground">
           <p>© 2024 Academic Verify. All rights reserved.</p>
           <div className="flex items-center space-x-4 mt-4 sm:mt-0">

@@ -1,6 +1,6 @@
 // WalletProvider.tsx
 import { createContext, useContext, useEffect, ReactNode } from 'react';
-import { web3Accounts, web3Enable, web3FromAddress } from '@polkadot/extension-dapp';
+import { web3Accounts, web3Enable } from '@polkadot/extension-dapp';
 import { useWalletStore } from '@/store/wallet.store';
 import { toast } from 'sonner';
 
