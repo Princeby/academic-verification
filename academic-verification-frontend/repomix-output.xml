@@ -51,8 +51,11 @@ src/
       index.ts
       WalletConnect.tsx
     did/
+      CreateDIDForm.tsx
+      CreateDIDModal.tsx
       DIDStatus.tsx
       index.ts
+      InstitutionRegistration.tsx
     layout/
       Footer.tsx
       Header.tsx
@@ -75,6 +78,7 @@ src/
       cn.ts
       constants.ts
   pages/
+    CreateDIDPage.tsx
     Credentials.tsx
     Dashboard.tsx
     Home.tsx
@@ -119,28 +123,19 @@ This section contains the contents of the repository's files.
 </file>
 
 <file path="src/components/blockchain/ChainStatus.tsx">
-// ChainStatus.tsx
 import { Circle } from 'lucide-react';
-import { usePolkadotApi } from '@/hooks/blockchain/usePolkadotApi';
 
 export default function ChainStatus() {
-  const { isConnected, blockNumber, chainName } = usePolkadotApi();
+  // Stub version - no Polkadot connection
+  const isConnected = false;
+  const blockNumber = 0;
+  const chainName = 'Offline';
 
   return (
     <div className="flex items-center space-x-2 text-sm">
-      <Circle
-        className={`h-2 w-2 ${
-          isConnected ? 'fill-green-500 text-green-500' : 'fill-red-500 text-red-500'
-        }`}
-      />
+      <Circle className="h-2 w-2 fill-red-500 text-red-500" />
       <span className="text-muted-foreground hidden lg:inline">
-        {isConnected ? (
-          <>
-            {chainName} #{blockNumber}
-          </>
-        ) : (
-          'Disconnected'
-        )}
+        {chainName}
       </span>
     </div>
   );
@@ -153,21 +148,39 @@ export { default as ChainStatus } from './ChainStatus';
 </file>
 
 <file path="src/components/blockchain/WalletConnect.tsx">
-// WalletConnect.tsx
 import { useState } from 'react';
-import { Wallet, ChevronDown } from 'lucide-react';
+import { Wallet, ChevronDown, Copy, LogOut, ExternalLink } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { useWalletStore } from '@/store/wallet.store';
+import { useWalletContext } from '@/providers/WalletProvider';
+import { toast } from 'sonner';
 
 export default function WalletConnect() {
-  const { isConnected, account, connectWallet, disconnectWallet } = useWalletStore();
+  const { isConnected, account, disconnectWallet } = useWalletStore();
+  const { enableWallet } = useWalletContext();
   const [showDropdown, setShowDropdown] = useState(false);
 
   const handleConnect = async () => {
     try {
-      await connectWallet();
+      await enableWallet();
     } catch (error) {
       console.error('Failed to connect wallet:', error);
+    }
+  };
+
+  const copyAddress = () => {
+    if (account?.address) {
+      navigator.clipboard.writeText(account.address);
+      toast.success('Address copied to clipboard');
+      setShowDropdown(false);
+    }
+  };
+
+  const viewOnExplorer = () => {
+    if (account?.address) {
+      // Update this URL based on your network
+      window.open(`https://polkadot.js.org/apps/#/accounts/${account.address}`, '_blank');
+      setShowDropdown(false);
     }
   };
 
@@ -188,7 +201,9 @@ export default function WalletConnect() {
         onClick={() => setShowDropdown(!showDropdown)}
         className="flex items-center"
       >
-        <div className="h-6 w-6 rounded-full bg-primary mr-2" />
+        <div className="h-6 w-6 rounded-full bg-gradient-to-br from-primary to-purple-600 mr-2 flex items-center justify-center text-xs text-white font-bold">
+          {account?.name?.charAt(0)?.toUpperCase() || '?'}
+        </div>
         <span className="hidden sm:inline">
           {account?.name || `${account?.address.slice(0, 6)}...${account?.address.slice(-4)}`}
         </span>
@@ -196,36 +211,517 @@ export default function WalletConnect() {
       </Button>
 
       {showDropdown && (
-        <div className="absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-card border border-border z-50">
-          <div className="py-1">
-            <div className="px-4 py-2 border-b border-border">
-              <p className="text-sm font-medium">{account?.name || 'Account'}</p>
-              <p className="text-xs text-muted-foreground">
-                {account?.address.slice(0, 10)}...{account?.address.slice(-8)}
-              </p>
+        <>
+          {/* Backdrop */}
+          <div 
+            className="fixed inset-0 z-40" 
+            onClick={() => setShowDropdown(false)}
+          />
+          
+          {/* Dropdown */}
+          <div className="absolute right-0 mt-2 w-64 rounded-md shadow-lg bg-card border border-border z-50">
+            <div className="py-1">
+              {/* Account Info */}
+              <div className="px-4 py-3 border-b border-border">
+                <div className="flex items-center space-x-2 mb-2">
+                  <div className="h-8 w-8 rounded-full bg-gradient-to-br from-primary to-purple-600 flex items-center justify-center text-sm text-white font-bold">
+                    {account?.name?.charAt(0)?.toUpperCase() || '?'}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{account?.name || 'Account'}</p>
+                    {account?.source && (
+                      <p className="text-xs text-muted-foreground capitalize">{account.source}</p>
+                    )}
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground font-mono break-all">
+                  {account?.address}
+                </p>
+              </div>
+
+              {/* Actions */}
+              <button
+                onClick={copyAddress}
+                className="flex items-center w-full text-left px-4 py-2 text-sm hover:bg-accent transition-colors"
+              >
+                <Copy className="h-4 w-4 mr-2" />
+                Copy Address
+              </button>
+
+              <button
+                onClick={viewOnExplorer}
+                className="flex items-center w-full text-left px-4 py-2 text-sm hover:bg-accent transition-colors"
+              >
+                <ExternalLink className="h-4 w-4 mr-2" />
+                View on Explorer
+              </button>
+
+              <div className="border-t border-border my-1" />
+
+              <button
+                onClick={() => {
+                  disconnectWallet();
+                  setShowDropdown(false);
+                  toast.success('Wallet disconnected');
+                }}
+                className="flex items-center w-full text-left px-4 py-2 text-sm text-destructive hover:bg-accent transition-colors"
+              >
+                <LogOut className="h-4 w-4 mr-2" />
+                Disconnect
+              </button>
             </div>
-            <button
-              onClick={() => {
-                navigator.clipboard.writeText(account?.address || '');
-                setShowDropdown(false);
-              }}
-              className="block w-full text-left px-4 py-2 text-sm hover:bg-accent"
-            >
-              Copy Address
-            </button>
-            <button
-              onClick={() => {
-                disconnectWallet();
-                setShowDropdown(false);
-              }}
-              className="block w-full text-left px-4 py-2 text-sm text-destructive hover:bg-accent"
-            >
-              Disconnect
-            </button>
           </div>
-        </div>
+        </>
       )}
     </div>
+  );
+}
+</file>
+
+<file path="src/components/did/CreateDIDForm.tsx">
+import { useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import { Key, Copy, Download, Eye, EyeOff, AlertTriangle, CheckCircle2, Loader2 } from 'lucide-react';
+import { Button } from '../ui/Button';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../ui/Card';
+import { Input } from '../ui/Input';
+import { Badge } from '../ui/Badge';
+import { toast } from 'sonner';
+
+// Form validation schema
+const createDIDSchema = z.object({
+  keyType: z.enum(['Ed25519', 'Sr25519', 'ECDSA']),
+  backupConfirmed: z.boolean().refine(val => val === true, {
+    message: 'You must confirm that you have backed up your keys',
+  }),
+});
+
+type CreateDIDFormData = z.infer<typeof createDIDSchema>;
+
+// Key types with descriptions
+const KEY_TYPES = [
+  {
+    value: 'Ed25519',
+    name: 'Ed25519',
+    description: 'Recommended - Fast and secure',
+    recommended: true,
+  },
+  {
+    value: 'Sr25519',
+    name: 'Sr25519',
+    description: 'Substrate native - More features',
+    recommended: false,
+  },
+  {
+    value: 'ECDSA',
+    name: 'ECDSA',
+    description: 'Ethereum compatible',
+    recommended: false,
+  },
+] as const;
+
+interface CreateDIDFormProps {
+  onSuccess?: (did: string) => void;
+  onCancel?: () => void;
+}
+
+export default function CreateDIDForm({ onSuccess, onCancel }: CreateDIDFormProps) {
+  const [step, setStep] = useState<'select' | 'generate' | 'backup' | 'confirm' | 'submit'>('select');
+  const [generatedKeys, setGeneratedKeys] = useState<{
+    publicKey: string;
+    mnemonic: string;
+    address: string;
+  } | null>(null);
+  const [showMnemonic, setShowMnemonic] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const { register, handleSubmit, watch, formState: { errors } } = useForm<CreateDIDFormData>({
+    resolver: zodResolver(createDIDSchema),
+    defaultValues: {
+      keyType: 'Ed25519',
+      backupConfirmed: false,
+    },
+  });
+
+  const selectedKeyType = watch('keyType');
+
+  // Generate keys
+  const generateKeys = async () => {
+    try {
+      setStep('generate');
+      
+      // Simulate key generation (replace with actual Polkadot key generation)
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Mock generated keys (replace with actual generation)
+      const mockKeys = {
+        publicKey: '0x' + Array(64).fill(0).map(() => Math.floor(Math.random() * 16).toString(16)).join(''),
+        mnemonic: 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about',
+        address: '5' + Array(47).fill(0).map(() => 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'[Math.floor(Math.random() * 62)]).join(''),
+      };
+      
+      setGeneratedKeys(mockKeys);
+      setStep('backup');
+      toast.success('Keys generated successfully');
+    } catch (error) {
+      console.error('Failed to generate keys:', error);
+      toast.error('Failed to generate keys');
+      setStep('select');
+    }
+  };
+
+  // Copy to clipboard
+  const copyToClipboard = (text: string, label: string) => {
+    navigator.clipboard.writeText(text);
+    toast.success(`${label} copied to clipboard`);
+  };
+
+  // Download backup file
+  const downloadBackup = () => {
+    if (!generatedKeys) return;
+    
+    const backup = {
+      publicKey: generatedKeys.publicKey,
+      mnemonic: generatedKeys.mnemonic,
+      address: generatedKeys.address,
+      keyType: selectedKeyType,
+      createdAt: new Date().toISOString(),
+      warning: 'KEEP THIS FILE SECURE! Anyone with this information can control your DID.',
+    };
+    
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `did-backup-${Date.now()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    toast.success('Backup file downloaded');
+  };
+
+  // Submit DID creation to blockchain
+  const onSubmit = async (data: CreateDIDFormData) => {
+    if (!generatedKeys) return;
+    
+    setIsSubmitting(true);
+    
+    try {
+      // TODO: Replace with actual blockchain transaction
+      console.log('Creating DID with:', {
+        keyType: data.keyType,
+        publicKey: generatedKeys.publicKey,
+        address: generatedKeys.address,
+      });
+      
+      // Simulate transaction
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      toast.success('DID created successfully!');
+      onSuccess?.(generatedKeys.address);
+    } catch (error) {
+      console.error('Failed to create DID:', error);
+      toast.error('Failed to create DID. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Step 1: Select Key Type
+  if (step === 'select') {
+    return (
+      <Card className="max-w-2xl mx-auto">
+        <CardHeader>
+          <CardTitle className="flex items-center space-x-2">
+            <Key className="h-6 w-6" />
+            <span>Create Your DID</span>
+          </CardTitle>
+          <CardDescription>
+            Choose a key type for your decentralized identifier
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="space-y-3">
+            {KEY_TYPES.map((type) => (
+              <label
+                key={type.value}
+                className={`
+                  flex items-start p-4 border-2 rounded-lg cursor-pointer transition-all
+                  ${selectedKeyType === type.value 
+                    ? 'border-primary bg-primary/5' 
+                    : 'border-border hover:border-primary/50'
+                  }
+                `}
+              >
+                <input
+                  type="radio"
+                  value={type.value}
+                  {...register('keyType')}
+                  className="mt-1"
+                />
+                <div className="ml-3 flex-1">
+                  <div className="flex items-center space-x-2">
+                    <span className="font-semibold">{type.name}</span>
+                    {type.recommended && (
+                      <Badge variant="success" className="text-xs">Recommended</Badge>
+                    )}
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-1">{type.description}</p>
+                </div>
+              </label>
+            ))}
+          </div>
+
+          <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
+            <div className="flex items-start space-x-3">
+              <AlertTriangle className="h-5 w-5 text-yellow-600 dark:text-yellow-500 flex-shrink-0 mt-0.5" />
+              <div className="text-sm">
+                <p className="font-semibold text-yellow-800 dark:text-yellow-400">Important Security Notice</p>
+                <p className="text-yellow-700 dark:text-yellow-300 mt-1">
+                  You will receive a recovery phrase. Write it down and store it safely. 
+                  Anyone with this phrase can control your DID.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-between">
+            {onCancel && (
+              <Button variant="outline" onClick={onCancel}>
+                Cancel
+              </Button>
+            )}
+            <Button onClick={generateKeys} className="ml-auto">
+              Continue
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Step 2: Generating (Loading)
+  if (step === 'generate') {
+    return (
+      <Card className="max-w-2xl mx-auto">
+        <CardContent className="py-12">
+          <div className="text-center space-y-4">
+            <Loader2 className="h-12 w-12 animate-spin mx-auto text-primary" />
+            <h3 className="text-xl font-semibold">Generating Your Keys...</h3>
+            <p className="text-muted-foreground">This will only take a moment</p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Step 3 & 4: Backup Keys
+  if (step === 'backup' || step === 'confirm') {
+    return (
+      <Card className="max-w-2xl mx-auto">
+        <CardHeader>
+          <CardTitle className="flex items-center space-x-2">
+            <Key className="h-6 w-6" />
+            <span>Backup Your Keys</span>
+          </CardTitle>
+          <CardDescription>
+            Save these keys securely. You'll need them to recover your DID.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {/* DID Address */}
+          <div>
+            <label className="text-sm font-semibold mb-2 block">Your DID Address</label>
+            <div className="flex items-center space-x-2">
+              <Input 
+                value={generatedKeys?.address || ''} 
+                readOnly 
+                className="font-mono text-sm"
+              />
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => copyToClipboard(generatedKeys?.address || '', 'Address')}
+              >
+                <Copy className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+
+          {/* Public Key */}
+          <div>
+            <label className="text-sm font-semibold mb-2 block">Public Key</label>
+            <div className="flex items-center space-x-2">
+              <Input 
+                value={generatedKeys?.publicKey || ''} 
+                readOnly 
+                className="font-mono text-sm"
+              />
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => copyToClipboard(generatedKeys?.publicKey || '', 'Public key')}
+              >
+                <Copy className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+
+          {/* Recovery Phrase */}
+          <div>
+            <label className="text-sm font-semibold mb-2 block">
+              Recovery Phrase (Mnemonic)
+            </label>
+            <div className="space-y-2">
+              <div className="relative">
+                <Input 
+                  value={generatedKeys?.mnemonic || ''} 
+                  type={showMnemonic ? 'text' : 'password'}
+                  readOnly 
+                  className="font-mono text-sm pr-20"
+                />
+                <div className="absolute right-2 top-1/2 -translate-y-1/2 flex space-x-1">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => setShowMnemonic(!showMnemonic)}
+                  >
+                    {showMnemonic ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => copyToClipboard(generatedKeys?.mnemonic || '', 'Recovery phrase')}
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Download Backup */}
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={downloadBackup}
+          >
+            <Download className="h-4 w-4 mr-2" />
+            Download Backup File
+          </Button>
+
+          {/* Security Warning */}
+          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+            <div className="flex items-start space-x-3">
+              <AlertTriangle className="h-5 w-5 text-red-600 dark:text-red-500 flex-shrink-0 mt-0.5" />
+              <div className="text-sm">
+                <p className="font-semibold text-red-800 dark:text-red-400">Critical Security Warning</p>
+                <ul className="text-red-700 dark:text-red-300 mt-2 space-y-1 list-disc list-inside">
+                  <li>Never share your recovery phrase with anyone</li>
+                  <li>Store it in a secure location (password manager, safe, etc.)</li>
+                  <li>If you lose it, you cannot recover your DID</li>
+                  <li>Anyone with this phrase can control your DID</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          {/* Confirmation Checkbox */}
+          <label className="flex items-start space-x-3 cursor-pointer">
+            <input
+              type="checkbox"
+              {...register('backupConfirmed')}
+              className="mt-1"
+            />
+            <span className="text-sm">
+              I have securely backed up my recovery phrase and understand that I cannot recover 
+              my DID without it. I accept full responsibility for keeping it safe.
+            </span>
+          </label>
+          {errors.backupConfirmed && (
+            <p className="text-sm text-red-600">{errors.backupConfirmed.message}</p>
+          )}
+
+          {/* Actions */}
+          <div className="flex justify-between pt-4">
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setStep('select');
+                setGeneratedKeys(null);
+              }}
+            >
+              Start Over
+            </Button>
+            <Button
+              onClick={handleSubmit(onSubmit)}
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Creating DID...
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="h-4 w-4 mr-2" />
+                  Create DID
+                </>
+              )}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return null;
+}
+</file>
+
+<file path="src/components/did/CreateDIDModal.tsx">
+import { Modal } from '../ui/Modal';
+import CreateDIDForm from './CreateDIDForm';
+import { useDIDStore } from '@/store/did.store';
+
+interface CreateDIDModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+export default function CreateDIDModal({ isOpen, onClose }: CreateDIDModalProps) {
+  const setDID = useDIDStore(state => state.setDID);
+
+  const handleSuccess = (didAddress: string) => {
+    // Update store with new DID
+    setDID(didAddress, [{
+      id: '1',
+      keyType: 'Ed25519',
+      publicKey: '0x...',
+      addedAt: Date.now(),
+    }]);
+    
+    // Close modal
+    onClose();
+  };
+
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      className="max-w-3xl"
+    >
+      <CreateDIDForm 
+        onSuccess={handleSuccess}
+        onCancel={onClose}
+      />
+    </Modal>
   );
 }
 </file>
@@ -305,6 +801,623 @@ export default function DIDStatus() {
 
 <file path="src/components/did/index.ts">
 export { default as DIDStatus } from './DIDStatus';
+export { default as CreateDIDForm } from './CreateDIDForm';
+export { default as CreateDIDModal } from './CreateDIDModal';
+export { default as InstitutionRegistration } from './InstitutionRegistration';
+</file>
+
+<file path="src/components/did/InstitutionRegistration.tsx">
+import { useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import { 
+  Building2, 
+  Upload, 
+  FileText, 
+  CheckCircle2, 
+  Loader2, 
+  AlertCircle,
+  ArrowLeft,
+  ArrowRight,
+  Globe,
+  Mail,
+  Phone,
+  MapPin
+} from 'lucide-react';
+import { Button } from '../ui/Button';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../ui/Card';
+import { Input } from '../ui/Input';
+import { Badge } from '../ui/Badge';
+import { toast } from 'sonner';
+import { INSTITUTION_TYPES } from '@/lib/utils/constants';
+import { useDIDStore } from '@/store/did.store';
+
+// Form validation schema
+const institutionSchema = z.object({
+  name: z.string()
+    .min(3, 'Institution name must be at least 3 characters')
+    .max(100, 'Institution name must be less than 100 characters'),
+  type: z.enum(INSTITUTION_TYPES),
+  description: z.string()
+    .max(500, 'Description must be less than 500 characters')
+    .optional(),
+  country: z.string().min(2, 'Please select a country'),
+  website: z.string().url('Please enter a valid URL'),
+  
+  // Contact information
+  contactName: z.string().min(2, 'Contact name is required'),
+  contactEmail: z.string().email('Please enter a valid email'),
+  contactPhone: z.string().min(5, 'Please enter a valid phone number'),
+  address: z.string().min(10, 'Please enter a complete address'),
+  
+  // Legal
+  termsAccepted: z.boolean().refine(val => val === true, {
+    message: 'You must accept the terms and conditions',
+  }),
+});
+
+type InstitutionFormData = z.infer<typeof institutionSchema>;
+
+interface InstitutionRegistrationProps {
+  onSuccess?: () => void;
+  onCancel?: () => void;
+}
+
+export default function InstitutionRegistration({ onSuccess, onCancel }: InstitutionRegistrationProps) {
+  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
+  const [uploadedDocs, setUploadedDocs] = useState<File[]>([]);
+  const [docHashes, setDocHashes] = useState<string[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { didAddress } = useDIDStore();
+
+  const { 
+    register, 
+    handleSubmit, 
+    watch, 
+    formState: { errors },
+    trigger 
+  } = useForm<InstitutionFormData>({
+    resolver: zodResolver(institutionSchema),
+    defaultValues: {
+      type: 'University',
+      termsAccepted: false,
+    },
+  });
+
+  const selectedType = watch('type');
+
+  // Handle document upload
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    
+    if (files.length === 0) return;
+    
+    // Validate file types (PDF only for verification docs)
+    const validFiles = files.filter(file => file.type === 'application/pdf');
+    
+    if (validFiles.length !== files.length) {
+      toast.error('Only PDF files are allowed');
+      return;
+    }
+    
+    setUploadedDocs(prev => [...prev, ...validFiles]);
+    
+    // Generate hashes for each file
+    for (const file of validFiles) {
+      const hash = await generateFileHash(file);
+      setDocHashes(prev => [...prev, hash]);
+    }
+    
+    toast.success(`${validFiles.length} document(s) uploaded`);
+  };
+
+  // Generate file hash (mock - replace with actual Blake2)
+  const generateFileHash = async (file: File): Promise<string> => {
+    // Mock hash generation
+    return '0x' + Array(64).fill(0).map(() => 
+      Math.floor(Math.random() * 16).toString(16)
+    ).join('');
+  };
+
+  // Remove uploaded document
+  const removeDocument = (index: number) => {
+    setUploadedDocs(prev => prev.filter((_, i) => i !== index));
+    setDocHashes(prev => prev.filter((_, i) => i !== index));
+    toast.success('Document removed');
+  };
+
+  // Navigate steps
+  const nextStep = async () => {
+    let fieldsToValidate: (keyof InstitutionFormData)[] = [];
+    
+    if (step === 1) {
+      fieldsToValidate = ['name', 'type', 'description', 'country', 'website'];
+    } else if (step === 3) {
+      fieldsToValidate = ['contactName', 'contactEmail', 'contactPhone', 'address'];
+    }
+    
+    const isValid = await trigger(fieldsToValidate);
+    if (isValid) {
+      setStep((prev) => Math.min(prev + 1, 4) as 1 | 2 | 3 | 4);
+    }
+  };
+
+  const prevStep = () => {
+    setStep((prev) => Math.max(prev - 1, 1) as 1 | 2 | 3 | 4);
+  };
+
+  // Submit registration
+  const onSubmit = async (data: InstitutionFormData) => {
+    if (step !== 4) return;
+    
+    setIsSubmitting(true);
+    
+    try {
+      // TODO: Replace with actual blockchain transaction
+      console.log('Registering institution:', {
+        ...data,
+        did: didAddress,
+        documentHashes: docHashes,
+      });
+      
+      // Simulate transaction
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Update DID store to mark as institution
+      useDIDStore.getState().setInstitution(data.name);
+      
+      toast.success('Institution registration submitted!', {
+        description: 'Your application is pending verification',
+      });
+      
+      onSuccess?.();
+    } catch (error) {
+      console.error('Failed to register institution:', error);
+      toast.error('Failed to register institution');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Step 1: Institution Information
+  const renderStep1 = () => (
+    <div className="space-y-6">
+      <div>
+        <label className="block text-sm font-semibold mb-2">
+          Institution Name *
+        </label>
+        <Input
+          {...register('name')}
+          placeholder="e.g., University of Technology"
+          className={errors.name ? 'border-red-500' : ''}
+        />
+        {errors.name && (
+          <p className="text-sm text-red-600 mt-1">{errors.name.message}</p>
+        )}
+      </div>
+
+      <div>
+        <label className="block text-sm font-semibold mb-2">
+          Institution Type *
+        </label>
+        <select
+          {...register('type')}
+          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+        >
+          {INSTITUTION_TYPES.map((type) => (
+            <option key={type} value={type}>{type}</option>
+          ))}
+        </select>
+      </div>
+
+      <div>
+        <label className="block text-sm font-semibold mb-2">
+          Description (Optional)
+        </label>
+        <textarea
+          {...register('description')}
+          placeholder="Brief description of your institution..."
+          className="flex min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+          maxLength={500}
+        />
+        {errors.description && (
+          <p className="text-sm text-red-600 mt-1">{errors.description.message}</p>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-semibold mb-2">
+            Country *
+          </label>
+          <Input
+            {...register('country')}
+            placeholder="e.g., United States"
+            className={errors.country ? 'border-red-500' : ''}
+          />
+          {errors.country && (
+            <p className="text-sm text-red-600 mt-1">{errors.country.message}</p>
+          )}
+        </div>
+
+        <div>
+          <label className="block text-sm font-semibold mb-2">
+            <Globe className="inline h-4 w-4 mr-1" />
+            Website *
+          </label>
+          <Input
+            {...register('website')}
+            type="url"
+            placeholder="https://example.edu"
+            className={errors.website ? 'border-red-500' : ''}
+          />
+          {errors.website && (
+            <p className="text-sm text-red-600 mt-1">{errors.website.message}</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
+  // Step 2: Verification Documents
+  const renderStep2 = () => (
+    <div className="space-y-6">
+      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+        <div className="flex items-start space-x-3">
+          <FileText className="h-5 w-5 text-blue-600 dark:text-blue-500 flex-shrink-0 mt-0.5" />
+          <div className="text-sm">
+            <p className="font-semibold text-blue-800 dark:text-blue-400">Required Documents</p>
+            <p className="text-blue-700 dark:text-blue-300 mt-1">
+              Please upload official documents to verify your institution's legitimacy:
+            </p>
+            <ul className="list-disc list-inside mt-2 space-y-1 text-blue-700 dark:text-blue-300">
+              <li>Accreditation certificate</li>
+              <li>Business registration document</li>
+              <li>Official letterhead or stamp</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      {/* File Upload */}
+      <div>
+        <label className="block text-sm font-semibold mb-2">
+          Upload Verification Documents (PDF only)
+        </label>
+        <div className="border-2 border-dashed border-border rounded-lg p-8 text-center hover:border-primary transition-colors">
+          <input
+            type="file"
+            multiple
+            accept=".pdf"
+            onChange={handleFileUpload}
+            className="hidden"
+            id="file-upload"
+          />
+          <label htmlFor="file-upload" className="cursor-pointer">
+            <Upload className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+            <p className="text-sm font-medium mb-1">
+              Click to upload or drag and drop
+            </p>
+            <p className="text-xs text-muted-foreground">
+              PDF files only, up to 10MB each
+            </p>
+          </label>
+        </div>
+      </div>
+
+      {/* Uploaded Documents */}
+      {uploadedDocs.length > 0 && (
+        <div className="space-y-3">
+          <label className="block text-sm font-semibold">
+            Uploaded Documents ({uploadedDocs.length})
+          </label>
+          {uploadedDocs.map((file, index) => (
+            <div
+              key={index}
+              className="flex items-center justify-between p-3 bg-accent rounded-lg"
+            >
+              <div className="flex items-center space-x-3 flex-1 min-w-0">
+                <FileText className="h-5 w-5 text-primary flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{file.name}</p>
+                  <p className="text-xs text-muted-foreground font-mono truncate">
+                    Hash: {docHashes[index]}
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => removeDocument(index)}
+                className="flex-shrink-0"
+              >
+                Remove
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {uploadedDocs.length === 0 && (
+        <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
+          <div className="flex items-start space-x-3">
+            <AlertCircle className="h-5 w-5 text-yellow-600 dark:text-yellow-500 flex-shrink-0 mt-0.5" />
+            <p className="text-sm text-yellow-700 dark:text-yellow-300">
+              At least one verification document is recommended for faster approval
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  // Step 3: Contact Information
+  const renderStep3 = () => (
+    <div className="space-y-6">
+      <div>
+        <label className="block text-sm font-semibold mb-2">
+          Primary Contact Name *
+        </label>
+        <Input
+          {...register('contactName')}
+          placeholder="Full name of primary contact"
+          className={errors.contactName ? 'border-red-500' : ''}
+        />
+        {errors.contactName && (
+          <p className="text-sm text-red-600 mt-1">{errors.contactName.message}</p>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-semibold mb-2">
+            <Mail className="inline h-4 w-4 mr-1" />
+            Email Address *
+          </label>
+          <Input
+            {...register('contactEmail')}
+            type="email"
+            placeholder="contact@institution.edu"
+            className={errors.contactEmail ? 'border-red-500' : ''}
+          />
+          {errors.contactEmail && (
+            <p className="text-sm text-red-600 mt-1">{errors.contactEmail.message}</p>
+          )}
+        </div>
+
+        <div>
+          <label className="block text-sm font-semibold mb-2">
+            <Phone className="inline h-4 w-4 mr-1" />
+            Phone Number *
+          </label>
+          <Input
+            {...register('contactPhone')}
+            type="tel"
+            placeholder="+1 (555) 123-4567"
+            className={errors.contactPhone ? 'border-red-500' : ''}
+          />
+          {errors.contactPhone && (
+            <p className="text-sm text-red-600 mt-1">{errors.contactPhone.message}</p>
+          )}
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-sm font-semibold mb-2">
+          <MapPin className="inline h-4 w-4 mr-1" />
+          Official Address *
+        </label>
+        <textarea
+          {...register('address')}
+          placeholder="Complete institutional address including street, city, state/province, postal code"
+          className="flex min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+        />
+        {errors.address && (
+          <p className="text-sm text-red-600 mt-1">{errors.address.message}</p>
+        )}
+      </div>
+    </div>
+  );
+
+  // Step 4: Review & Submit
+  const renderStep4 = () => {
+    const formData = watch();
+    
+    return (
+      <div className="space-y-6">
+        <div className="bg-accent rounded-lg p-6 space-y-4">
+          <h3 className="font-semibold text-lg mb-4">Review Your Information</h3>
+          
+          {/* Institution Info */}
+          <div className="space-y-2">
+            <p className="text-sm font-semibold text-muted-foreground">Institution Details</p>
+            <div className="bg-background rounded p-3 space-y-1">
+              <p className="font-medium">{formData.name}</p>
+              <p className="text-sm text-muted-foreground">{formData.type}</p>
+              {formData.description && (
+                <p className="text-sm mt-2">{formData.description}</p>
+              )}
+              <div className="flex items-center space-x-4 mt-2 text-sm">
+                <span className="flex items-center">
+                  <MapPin className="h-3 w-3 mr-1" />
+                  {formData.country}
+                </span>
+                <span className="flex items-center">
+                  <Globe className="h-3 w-3 mr-1" />
+                  {formData.website}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Documents */}
+          <div className="space-y-2">
+            <p className="text-sm font-semibold text-muted-foreground">Verification Documents</p>
+            <div className="bg-background rounded p-3">
+              <p className="text-sm">{uploadedDocs.length} document(s) uploaded</p>
+              {docHashes.length > 0 && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Document hashes will be stored on-chain
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Contact */}
+          <div className="space-y-2">
+            <p className="text-sm font-semibold text-muted-foreground">Contact Information</p>
+            <div className="bg-background rounded p-3 space-y-1 text-sm">
+              <p className="font-medium">{formData.contactName}</p>
+              <p className="flex items-center text-muted-foreground">
+                <Mail className="h-3 w-3 mr-2" />
+                {formData.contactEmail}
+              </p>
+              <p className="flex items-center text-muted-foreground">
+                <Phone className="h-3 w-3 mr-2" />
+                {formData.contactPhone}
+              </p>
+              <p className="flex items-center text-muted-foreground mt-2">
+                <MapPin className="h-3 w-3 mr-2" />
+                {formData.address}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Terms */}
+        <label className="flex items-start space-x-3 cursor-pointer">
+          <input
+            type="checkbox"
+            {...register('termsAccepted')}
+            className="mt-1"
+          />
+          <span className="text-sm">
+            I certify that all information provided is accurate and that I have the authority 
+            to represent this institution. I agree to the{' '}
+            <a href="#" className="text-primary hover:underline">Terms of Service</a>
+            {' '}and{' '}
+            <a href="#" className="text-primary hover:underline">Privacy Policy</a>.
+          </span>
+        </label>
+        {errors.termsAccepted && (
+          <p className="text-sm text-red-600">{errors.termsAccepted.message}</p>
+        )}
+
+        <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
+          <div className="flex items-start space-x-3">
+            <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-500 flex-shrink-0 mt-0.5" />
+            <div className="text-sm">
+              <p className="font-semibold text-green-800 dark:text-green-400">Next Steps</p>
+              <p className="text-green-700 dark:text-green-300 mt-1">
+                After submission, your application will be reviewed. This typically takes 3-5 business days. 
+                You'll receive an email notification when your institution is verified.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <Card className="max-w-3xl mx-auto">
+      <CardHeader>
+        <CardTitle className="flex items-center space-x-2">
+          <Building2 className="h-6 w-6" />
+          <span>Register as Institution</span>
+        </CardTitle>
+        <CardDescription>
+          Complete the registration process to start issuing credentials
+        </CardDescription>
+        
+        {/* Progress Indicator */}
+        <div className="flex items-center space-x-2 mt-4">
+          {[1, 2, 3, 4].map((s) => (
+            <div key={s} className="flex items-center flex-1">
+              <div
+                className={`h-2 flex-1 rounded-full transition-colors ${
+                  s <= step ? 'bg-primary' : 'bg-muted'
+                }`}
+              />
+              {s < 4 && <div className="w-2" />}
+            </div>
+          ))}
+        </div>
+        <div className="flex justify-between text-xs text-muted-foreground mt-2">
+          <span>Info</span>
+          <span>Documents</span>
+          <span>Contact</span>
+          <span>Review</span>
+        </div>
+      </CardHeader>
+
+      <CardContent>
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+          {/* Step Content */}
+          {step === 1 && renderStep1()}
+          {step === 2 && renderStep2()}
+          {step === 3 && renderStep3()}
+          {step === 4 && renderStep4()}
+
+          {/* Navigation Buttons */}
+          <div className="flex justify-between pt-6 border-t">
+            <div>
+              {step > 1 && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={prevStep}
+                >
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  Previous
+                </Button>
+              )}
+              {onCancel && step === 1 && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={onCancel}
+                >
+                  Cancel
+                </Button>
+              )}
+            </div>
+
+            <div>
+              {step < 4 ? (
+                <Button
+                  type="button"
+                  onClick={nextStep}
+                >
+                  Next
+                  <ArrowRight className="h-4 w-4 ml-2" />
+                </Button>
+              ) : (
+                <Button
+                  type="submit"
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Submitting...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="h-4 w-4 mr-2" />
+                      Submit Registration
+                    </>
+                  )}
+                </Button>
+              )}
+            </div>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
+  );
+}
 </file>
 
 <file path="src/components/layout/Footer.tsx">
@@ -536,8 +1649,8 @@ export default function Header() {
 
 <file path="src/components/layout/index.ts">
 export { default as MainLayout } from './MainLayout';
-// export { default as Header } from './Header';
-// export { default as Sidebar } from './Sidebar';
+export { default as Header } from './Header';
+export { default as Sidebar } from './Sidebar';
 export { default as Footer } from './Footer';
 </file>
 
@@ -575,6 +1688,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
 </file>
 
 <file path="src/components/layout/Sidebar.tsx">
+import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { 
   LayoutDashboard, 
@@ -589,6 +1703,8 @@ import {
 import { cn } from '@/lib/utils/cn';
 import { Button } from '../ui/Button';
 import DIDStatus from '../did/DIDStatus';
+import CreateDIDModal from '../did/CreateDIDModal';
+import { useDIDStore } from '@/store/did.store';
 
 const navigationItems = [
   {
@@ -633,90 +1749,105 @@ const institutionItems = [
 
 export default function Sidebar() {
   const location = useLocation();
-  const isInstitution = false; // This should come from your DID store
+  const [showCreateDIDModal, setShowCreateDIDModal] = useState(false);
+  const { hasDID, isInstitution } = useDIDStore();
 
   return (
-    <div className="flex flex-col h-full py-6 px-3">
-      {/* User Profile Section */}
-      <div className="mb-6 px-3">
-        <DIDStatus />
-      </div>
-
-      {/* Quick Actions */}
-      <div className="mb-6 px-3 space-y-2">
-        <Button className="w-full justify-start" size="sm">
-          <Plus className="h-4 w-4 mr-2" />
-          Create DID
-        </Button>
-      </div>
-
-      {/* Main Navigation */}
-      <nav className="flex-1 space-y-1">
-        <div className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-          Main Menu
+    <>
+      <div className="flex flex-col h-full py-6 px-3">
+        {/* User Profile Section */}
+        <div className="mb-6 px-3">
+          <DIDStatus />
         </div>
-        {navigationItems.map((item) => {
-          const Icon = item.icon;
-          const isActive = location.pathname === item.href;
-          
-          return (
-            <Link
-              key={item.href}
-              to={item.href}
-              className={cn(
-                "flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-colors",
-                isActive
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-              )}
+
+        {/* Quick Actions */}
+        {!hasDID && (
+          <div className="mb-6 px-3 space-y-2">
+            <Button 
+              className="w-full justify-start" 
+              size="sm"
+              onClick={() => setShowCreateDIDModal(true)}
             >
-              <Icon className="h-5 w-5 mr-3" />
-              {item.title}
-            </Link>
-          );
-        })}
-
-        {/* Institution Section (conditional) */}
-        {isInstitution && (
-          <>
-            <div className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider mt-6 mb-2">
-              Institution
-            </div>
-            {institutionItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = location.pathname === item.href;
-              
-              return (
-                <Link
-                  key={item.href}
-                  to={item.href}
-                  className={cn(
-                    "flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-colors",
-                    isActive
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                  )}
-                >
-                  <Icon className="h-5 w-5 mr-3" />
-                  {item.title}
-                </Link>
-              );
-            })}
-          </>
+              <Plus className="h-4 w-4 mr-2" />
+              Create DID
+            </Button>
+          </div>
         )}
-      </nav>
 
-      {/* Settings */}
-      <div className="mt-auto pt-4 border-t border-border">
-        <Link
-          to="/settings"
-          className="flex items-center px-3 py-2 text-sm font-medium rounded-lg text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
-        >
-          <Settings className="h-5 w-5 mr-3" />
-          Settings
-        </Link>
+        {/* Main Navigation */}
+        <nav className="flex-1 space-y-1">
+          <div className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+            Main Menu
+          </div>
+          {navigationItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = location.pathname === item.href;
+            
+            return (
+              <Link
+                key={item.href}
+                to={item.href}
+                className={cn(
+                  "flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-colors",
+                  isActive
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                )}
+              >
+                <Icon className="h-5 w-5 mr-3" />
+                {item.title}
+              </Link>
+            );
+          })}
+
+          {/* Institution Section (conditional) */}
+          {isInstitution && (
+            <>
+              <div className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider mt-6 mb-2">
+                Institution
+              </div>
+              {institutionItems.map((item) => {
+                const Icon = item.icon;
+                const isActive = location.pathname === item.href;
+                
+                return (
+                  <Link
+                    key={item.href}
+                    to={item.href}
+                    className={cn(
+                      "flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-colors",
+                      isActive
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                    )}
+                  >
+                    <Icon className="h-5 w-5 mr-3" />
+                    {item.title}
+                  </Link>
+                );
+              })}
+            </>
+          )}
+        </nav>
+
+        {/* Settings */}
+        <div className="mt-auto pt-4 border-t border-border">
+          <Link
+            to="/settings"
+            className="flex items-center px-3 py-2 text-sm font-medium rounded-lg text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+          >
+            <Settings className="h-5 w-5 mr-3" />
+            Settings
+          </Link>
+        </div>
       </div>
-    </div>
+
+      {/* Create DID Modal */}
+      <CreateDIDModal 
+        isOpen={showCreateDIDModal}
+        onClose={() => setShowCreateDIDModal(false)}
+      />
+    </>
   );
 }
 </file>
@@ -1184,6 +2315,33 @@ export const FILE_UPLOAD = {
 } as const;
 </file>
 
+<file path="src/pages/CreateDIDPage.tsx">
+import { useNavigate } from 'react-router-dom';
+import CreateDIDForm from '@/components/did/CreateDIDForm';
+
+export default function CreateDIDPage() {
+  const navigate = useNavigate();
+
+  const handleSuccess = () => {
+    // Navigate to dashboard after successful DID creation
+    navigate('/dashboard');
+  };
+
+  return (
+    <div className="max-w-4xl mx-auto py-8">
+      <div className="mb-8 text-center">
+        <h1 className="text-3xl font-bold mb-2">Welcome to Academic Verify</h1>
+        <p className="text-muted-foreground">
+          Let's create your decentralized identifier to get started
+        </p>
+      </div>
+      
+      <CreateDIDForm onSuccess={handleSuccess} />
+    </div>
+  );
+}
+</file>
+
 <file path="src/pages/Credentials.tsx">
 // src/pages/Credentials.tsx
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
@@ -1206,13 +2364,13 @@ export default function Credentials() {
 </file>
 
 <file path="src/pages/Dashboard.tsx">
-// Dashboard.tsx
 import { useWalletStore } from '@/store/wallet.store';
 import { useDIDStore } from '@/store/did.store';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { Award, Building2, CheckCircle, Plus } from 'lucide-react';
+import { Award, Building2, CheckCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import CreateDIDPage from './CreateDIDPage';
 
 export default function Dashboard() {
   const { isConnected } = useWalletStore();
@@ -1234,24 +2392,7 @@ export default function Dashboard() {
   }
 
   if (!hasDID) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Card className="max-w-md">
-          <CardHeader>
-            <CardTitle>Create Your DID</CardTitle>
-            <CardDescription>
-              You need to create a decentralized identifier to get started
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button className="w-full">
-              <Plus className="h-4 w-4 mr-2" />
-              Create DID
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
+    return <CreateDIDPage />;
   }
 
   return (
@@ -1484,26 +2625,148 @@ export default function Institution() {
 </file>
 
 <file path="src/pages/Institutions.tsx">
-// src/pages/Institutions.tsx
-import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
+// src/pages/Institution.tsx
+import { useState } from 'react';
+import { useDIDStore } from '@/store/did.store';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { Building2, FileText, Users, Award, Plus } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
+import InstitutionRegistration from '@/components/did/InstitutionRegistration';
 
 export default function Institutions() {
+  const { isInstitution, institutionName } = useDIDStore();
+  const [showRegistration, setShowRegistration] = useState(!isInstitution);
+
+  if (showRegistration && !isInstitution) {
+    return (
+      <div className="py-8">
+        <InstitutionRegistration 
+          onSuccess={() => setShowRegistration(false)}
+          onCancel={() => setShowRegistration(false)}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-bold">Institutions</h1>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">{institutionName || 'Institution Profile'}</h1>
+          <p className="text-muted-foreground mt-1">
+            Manage your institution and issue credentials
+          </p>
+        </div>
+        <Badge variant="success" className="text-sm px-3 py-1">
+          Verified Institution
+        </Badge>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Credentials Issued
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">0</div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Active Recipients
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">0</div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Endorsements
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">0</div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Reputation
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">0</div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Quick Actions */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>Institution Directory</CardTitle>
-              <CardDescription>
-                Browse verified academic institutions
-              </CardDescription>
-            </div>
-            <Badge variant="success">0 Verified</Badge>
-          </div>
+          <CardTitle>Quick Actions</CardTitle>
         </CardHeader>
+        <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Button variant="outline" className="justify-start h-auto py-4">
+            <div className="flex flex-col items-start w-full">
+              <div className="flex items-center space-x-2 mb-1">
+                <Plus className="h-4 w-4" />
+                <span className="font-semibold">Issue Credential</span>
+              </div>
+              <span className="text-xs text-muted-foreground">
+                Issue a new credential to a student
+              </span>
+            </div>
+          </Button>
+
+          <Button variant="outline" className="justify-start h-auto py-4">
+            <div className="flex flex-col items-start w-full">
+              <div className="flex items-center space-x-2 mb-1">
+                <FileText className="h-4 w-4" />
+                <span className="font-semibold">View Issued</span>
+              </div>
+              <span className="text-xs text-muted-foreground">
+                See all credentials you've issued
+              </span>
+            </div>
+          </Button>
+
+          <Button variant="outline" className="justify-start h-auto py-4">
+            <div className="flex flex-col items-start w-full">
+              <div className="flex items-center space-x-2 mb-1">
+                <Users className="h-4 w-4" />
+                <span className="font-semibold">Manage Profile</span>
+              </div>
+              <span className="text-xs text-muted-foreground">
+                Update institution information
+              </span>
+            </div>
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Recent Activity */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Recent Activity</CardTitle>
+          <CardDescription>Latest credential issuances and updates</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="text-center py-8 text-muted-foreground">
+            <Award className="h-12 w-12 mx-auto mb-3 opacity-50" />
+            <p>No activity yet</p>
+            <p className="text-sm mt-1">Start by issuing your first credential</p>
+          </div>
+        </CardContent>
       </Card>
     </div>
   );
@@ -1554,9 +2817,9 @@ export default function Verify() {
 
 <file path="src/providers/PolkadotProvider.tsx">
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { ApiPromise, WsProvider } from '@polkadot/api';
-import { CHAIN_CONFIG } from '@/lib/utils/constants';
+import type { ApiPromise } from '@polkadot/api';
 import { toast } from 'sonner';
+import { CHAIN_CONFIG } from '@/lib/utils/constants';
 
 interface PolkadotContextType {
   api: ApiPromise | null;
@@ -1587,27 +2850,35 @@ export function PolkadotProvider({ children }: PolkadotProviderProps) {
 
     async function initApi() {
       try {
-        console.log('🔗 Attempting to connect to blockchain...');
+        // Dynamic import to avoid build issues
+        const { ApiPromise, WsProvider } = await import('@polkadot/api');
+        
+        console.log('🔗 Connecting to blockchain...');
         console.log('📍 Endpoint:', CHAIN_CONFIG.WS_PROVIDER);
         
         const wsProvider = new WsProvider(CHAIN_CONFIG.WS_PROVIDER);
         
-        // Add timeout to prevent hanging
+        // Connection timeout handler
         const timeout = setTimeout(() => {
           if (!isReady && isMounted) {
             console.warn('⚠️ Connection timeout - continuing without blockchain');
             setError('Could not connect to blockchain node (timeout)');
-            toast.warning('Running without blockchain connection', {
-              description: 'Some features may be limited'
+            toast.warning('Running in demo mode', {
+              description: 'Connect to a node to enable blockchain features'
             });
           }
         }, 5000);
 
-        apiInstance = await ApiPromise.create({ provider: wsProvider });
+        // Create API instance
+        apiInstance = await ApiPromise.create({ 
+          provider: wsProvider,
+          throwOnConnect: false,
+        });
 
         clearTimeout(timeout);
 
         if (isMounted) {
+          await apiInstance.isReady;
           setApi(apiInstance);
           setIsReady(true);
           console.log('✅ Connected to blockchain');
@@ -1616,24 +2887,25 @@ export function PolkadotProvider({ children }: PolkadotProviderProps) {
       } catch (err) {
         console.error('❌ Blockchain connection error:', err);
         if (isMounted) {
-          const errorMessage = err instanceof Error ? err.message : 'Failed to connect to blockchain';
+          const errorMessage = err instanceof Error ? err.message : 'Failed to connect';
           setError(errorMessage);
           
-          // Don't show error toast immediately - just log it
-          console.warn('⚠️ Running in offline mode - blockchain features disabled');
-          toast.info('Running in offline mode', {
-            description: 'Connect to a Polkadot node to enable all features'
+          toast.info('Running in demo mode', {
+            description: 'UI is functional, blockchain features disabled'
           });
         }
       }
     }
 
-    initApi();
+    // Delay initialization slightly to let UI render first
+    const timer = setTimeout(() => {
+      initApi();
+    }, 1500);
 
     return () => {
       isMounted = false;
+      clearTimeout(timer);
       if (apiInstance) {
-        console.log('🔌 Disconnecting from blockchain...');
         apiInstance.disconnect().catch(console.error);
       }
     };
@@ -1649,9 +2921,7 @@ export function PolkadotProvider({ children }: PolkadotProviderProps) {
 </file>
 
 <file path="src/providers/WalletProvider.tsx">
-// WalletProvider.tsx
-import { createContext, useContext, useEffect, ReactNode } from 'react';
-import { web3Accounts, web3Enable } from '@polkadot/extension-dapp';
+import { createContext, useContext, ReactNode } from 'react';
 import { useWalletStore } from '@/store/wallet.store';
 import { toast } from 'sonner';
 
@@ -1670,57 +2940,71 @@ interface WalletProviderProps {
 }
 
 export function WalletProvider({ children }: WalletProviderProps) {
-  const { isConnected } = useWalletStore();
-
   const enableWallet = async () => {
     try {
-      // Request access to extension
+      // Dynamic import to avoid build issues
+      const { web3Accounts, web3Enable } = await import('@polkadot/extension-dapp');
+      
+      console.log('🔌 Attempting to connect to wallet extension...');
+      
+      // Request access to extensions (supports Polkadot.js, Talisman, SubWallet, etc.)
       const extensions = await web3Enable('Academic Verify');
       
       if (extensions.length === 0) {
-        toast.error('No extension found. Please install Polkadot.js extension');
+        toast.error('No wallet extension found', {
+          description: 'Please install Polkadot.js, Talisman, or SubWallet'
+        });
         return;
       }
 
-      // Get all accounts
+      console.log(`✅ Found ${extensions.length} wallet extension(s)`);
+
+      // Get all accounts from all extensions
       const allAccounts = await web3Accounts();
       
       if (allAccounts.length === 0) {
-        toast.error('No accounts found. Please create an account in your wallet');
+        toast.error('No accounts found', {
+          description: 'Please create an account in your wallet extension'
+        });
         return;
       }
 
-      // For now, just connect to the first account
-      // In production, you'd show a modal to select account
+      console.log(`✅ Found ${allAccounts.length} account(s)`);
+
+      // Connect to the first account (in production, show account selector)
       const account = allAccounts[0];
       
       useWalletStore.setState({
         isConnected: true,
         account: {
           address: account.address,
-          name: account.meta.name,
-          source: account.meta.source,
+          name: account.meta.name as string | undefined,
+          source: account.meta.source as string | undefined,
         },
         accounts: allAccounts.map(acc => ({
           address: acc.address,
-          name: acc.meta.name,
-          source: acc.meta.source,
+          name: acc.meta.name as string | undefined,
+          source: acc.meta.source as string | undefined,
         })),
       });
 
-      toast.success('Wallet connected successfully');
+      toast.success('Wallet connected', {
+        description: `Connected to ${account.meta.name || 'account'}`
+      });
     } catch (error) {
       console.error('Failed to enable wallet:', error);
-      toast.error('Failed to connect wallet');
+      
+      if (error instanceof Error && error.message.includes('Rejected')) {
+        toast.error('Connection rejected', {
+          description: 'Please approve the connection request'
+        });
+      } else {
+        toast.error('Failed to connect wallet', {
+          description: 'Please make sure your wallet extension is unlocked'
+        });
+      }
     }
   };
-
-  // Auto-connect if previously connected
-  useEffect(() => {
-    if (isConnected) {
-      enableWallet();
-    }
-  }, []);
 
   return (
     <WalletContext.Provider value={{ enableWallet }}>
@@ -2414,6 +3698,7 @@ export default tseslint.config(
     "tailwind-merge": "^3.4.0",
     "tailwindcss": "^4.1.18",
     "zod": "^4.2.1",
+    "bn.js": "^5.2.1",
     "zustand": "^5.0.9"
   },
   "devDependencies": {
@@ -2428,7 +3713,8 @@ export default tseslint.config(
     "globals": "^16.5.0",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.4",
-    "vite": "^7.2.4"
+    "vite": "^7.2.4",
+    "vite-plugin-node-polyfills": "^0.24.0"
   }
 }
 </file>
@@ -2609,13 +3895,42 @@ import path from 'path'
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
     },
   },
+  
   optimizeDeps: {
-    exclude: ['@polkadot/api', '@polkadot/extension-dapp'],
+    // Exclude Polkadot packages from pre-bundling
+    exclude: [
+      '@polkadot/api',
+      '@polkadot/extension-dapp',
+      '@polkadot/util',
+      '@polkadot/util-crypto',
+      '@polkadot/keyring',
+      '@polkadot/types',
+      '@polkadot/rpc-provider',
+    ],
+    esbuildOptions: {
+      target: 'esnext',
+      supported: {
+        bigint: true,
+      },
+    },
+  },
+  
+  build: {
+    target: 'esnext',
+    commonjsOptions: {
+      transformMixedEsModules: true,
+    },
+  },
+  
+  // Define global variables
+  define: {
+    global: 'globalThis',
   },
 })
 </file>

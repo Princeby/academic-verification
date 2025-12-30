@@ -1,10 +1,10 @@
-// Dashboard.tsx
 import { useWalletStore } from '@/store/wallet.store';
 import { useDIDStore } from '@/store/did.store';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { Award, Building2, CheckCircle, Plus } from 'lucide-react';
+import { Award, Building2, CheckCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import CreateDIDPage from './CreateDIDPage';
 
 export default function Dashboard() {
   const { isConnected } = useWalletStore();
@@ -26,24 +26,7 @@ export default function Dashboard() {
   }
 
   if (!hasDID) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Card className="max-w-md">
-          <CardHeader>
-            <CardTitle>Create Your DID</CardTitle>
-            <CardDescription>
-              You need to create a decentralized identifier to get started
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button className="w-full">
-              <Plus className="h-4 w-4 mr-2" />
-              Create DID
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
+    return <CreateDIDPage />;
   }
 
   return (
