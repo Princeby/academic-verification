@@ -70,7 +70,11 @@ src/
       Header.tsx
       index.ts
       MainLayout.tsx
+      NotificationBell.tsx
       Sidebar.tsx
+    requests/
+      RequestsList.tsx
+      ReviewRequestModal.tsx
     ui/
       Badge.tsx
       Button.tsx
@@ -85,6 +89,7 @@ src/
       usePolkadotApi.ts
   lib/
     utils/
+      bn-shim.ts
       cn.ts
       constants.ts
   pages/
@@ -93,9 +98,11 @@ src/
     Dashboard.tsx
     Home.tsx
     Institution.tsx
+    InstitutionRequests.tsx
     Institutions.tsx
     IssueCredential.tsx
     IssuedCredentials.tsx
+    MyRequests.tsx
     Settings.tsx
     Verify.tsx
   providers/
@@ -104,8 +111,11 @@ src/
   store/
     credentials.store.ts
     did.store.ts
+    notifications.store.ts
     ui.store.ts
     wallet.store.ts
+  types/
+    credentialRequest.types.ts
   App.css
   App.tsx
   index.css
@@ -4005,11 +4015,13 @@ export default function Footer() {
 </file>
 
 <file path="src/components/layout/Header.tsx">
+// src/components/layout/Header.tsx (Updated)
 import { Link } from 'react-router-dom';
 import { Menu, X } from 'lucide-react';
 import { useState } from 'react';
 import WalletConnect from '../blockchain/WalletConnect';
 import ChainStatus from '../blockchain/ChainStatus';
+import NotificationBell from './NotificationBell';
 import { Button } from '../ui/Button';
 
 export default function Header() {
@@ -4044,6 +4056,12 @@ export default function Header() {
               Credentials
             </Link>
             <Link 
+              to="/my-requests" 
+              className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+            >
+              My Requests
+            </Link>
+            <Link 
               to="/institutions" 
               className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
             >
@@ -4058,11 +4076,14 @@ export default function Header() {
           </nav>
 
           {/* Right side actions */}
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-3">
             {/* Chain Status */}
             <div className="hidden sm:block">
               <ChainStatus />
             </div>
+
+            {/* Notification Bell */}
+            <NotificationBell />
 
             {/* Wallet Connect */}
             <WalletConnect />
@@ -4100,6 +4121,13 @@ export default function Header() {
                 onClick={() => setMobileMenuOpen(false)}
               >
                 Credentials
+              </Link>
+              <Link 
+                to="/my-requests" 
+                className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors py-2"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                My Requests
               </Link>
               <Link 
                 to="/institutions" 
@@ -4162,6 +4190,197 @@ export default function MainLayout({ children }: MainLayoutProps) {
       </div>
       
       <Footer />
+    </div>
+  );
+}
+</file>
+
+<file path="src/components/layout/NotificationBell.tsx">
+// src/components/layout/NotificationBell.tsx
+import { useState } from 'react';
+import { Bell, Check, X, ExternalLink } from 'lucide-react';
+import { Button } from '@/components/ui/Button';
+import { Badge } from '@/components/ui/Badge';
+import { useNotificationsStore } from '@/store/notifications.store';
+import { useNavigate } from 'react-router-dom';
+import { cn } from '@/lib/utils/cn';
+
+const notificationIcons = {
+  request_received: '📩',
+  request_approved: '✅',
+  request_rejected: '❌',
+  credential_issued: '🎓',
+  credential_revoked: '⚠️',
+  endorsement_received: '⭐',
+  system: '🔔',
+};
+
+export default function NotificationBell() {
+  const [isOpen, setIsOpen] = useState(false);
+  const navigate = useNavigate();
+  const { 
+    notifications, 
+    unreadCount, 
+    markAsRead, 
+    markAllAsRead, 
+    removeNotification 
+  } = useNotificationsStore();
+
+  const formatTime = (timestamp: number) => {
+    const now = Date.now();
+    const diff = now - timestamp;
+    
+    const minutes = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+    const days = Math.floor(diff / 86400000);
+    
+    if (minutes < 1) return 'Just now';
+    if (minutes < 60) return `${minutes}m ago`;
+    if (hours < 24) return `${hours}h ago`;
+    return `${days}d ago`;
+  };
+
+  const handleNotificationClick = (notification: any) => {
+    markAsRead(notification.id);
+    if (notification.actionUrl) {
+      navigate(notification.actionUrl);
+      setIsOpen(false);
+    }
+  };
+
+  return (
+    <div className="relative">
+      {/* Bell Button */}
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="relative p-2 rounded-lg hover:bg-accent transition-colors"
+      >
+        <Bell className="h-5 w-5" />
+        {unreadCount > 0 && (
+          <span className="absolute top-1 right-1 h-4 w-4 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center">
+            {unreadCount > 9 ? '9+' : unreadCount}
+          </span>
+        )}
+      </button>
+
+      {/* Dropdown Panel */}
+      {isOpen && (
+        <>
+          {/* Backdrop */}
+          <div 
+            className="fixed inset-0 z-40" 
+            onClick={() => setIsOpen(false)}
+          />
+          
+          {/* Notification Panel */}
+          <div className="absolute right-0 mt-2 w-96 max-h-[32rem] overflow-hidden bg-card border border-border rounded-lg shadow-lg z-50">
+            {/* Header */}
+            <div className="p-4 border-b border-border flex items-center justify-between bg-accent/50">
+              <div>
+                <h3 className="font-semibold">Notifications</h3>
+                {unreadCount > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    {unreadCount} unread
+                  </p>
+                )}
+              </div>
+              {unreadCount > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={markAllAsRead}
+                  className="text-xs"
+                >
+                  <Check className="h-3 w-3 mr-1" />
+                  Mark all read
+                </Button>
+              )}
+            </div>
+
+            {/* Notifications List */}
+            <div className="max-h-96 overflow-y-auto">
+              {notifications.length === 0 ? (
+                <div className="p-8 text-center text-muted-foreground">
+                  <Bell className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                  <p className="text-sm">No notifications yet</p>
+                  <p className="text-xs mt-1">You'll be notified of important updates here</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-border">
+                  {notifications.map((notification) => (
+                    <div
+                      key={notification.id}
+                      className={cn(
+                        "p-4 transition-colors cursor-pointer hover:bg-accent/50",
+                        !notification.read && "bg-primary/5"
+                      )}
+                      onClick={() => handleNotificationClick(notification)}
+                    >
+                      <div className="flex items-start gap-3">
+                        {/* Icon */}
+                        <div className="text-2xl flex-shrink-0">
+                          {notificationIcons[notification.type]}
+                        </div>
+
+                        {/* Content */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-start justify-between gap-2 mb-1">
+                            <p className="font-medium text-sm truncate">
+                              {notification.title}
+                            </p>
+                            {!notification.read && (
+                              <div className="h-2 w-2 rounded-full bg-primary flex-shrink-0 mt-1" />
+                            )}
+                          </div>
+                          <p className="text-sm text-muted-foreground line-clamp-2">
+                            {notification.message}
+                          </p>
+                          <div className="flex items-center justify-between mt-2">
+                            <p className="text-xs text-muted-foreground">
+                              {formatTime(notification.createdAt)}
+                            </p>
+                            {notification.actionUrl && (
+                              <ExternalLink className="h-3 w-3 text-muted-foreground" />
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Remove Button */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeNotification(notification.id);
+                          }}
+                          className="p-1 hover:bg-accent rounded transition-colors flex-shrink-0"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            {notifications.length > 0 && (
+              <div className="p-3 border-t border-border bg-accent/50">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    useNotificationsStore.getState().clearAll();
+                    setIsOpen(false);
+                  }}
+                  className="w-full text-xs"
+                >
+                  Clear All Notifications
+                </Button>
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -4328,6 +4547,675 @@ export default function Sidebar() {
         onClose={() => setShowCreateDIDModal(false)}
       />
     </>
+  );
+}
+</file>
+
+<file path="src/components/requests/RequestsList.tsx">
+// src/components/requests/RequestsList.tsx
+import { useState } from 'react';
+import { 
+  Clock, 
+  CheckCircle, 
+  XCircle, 
+  Award,
+  Ban,
+  Eye,
+  MoreVertical,
+  Calendar,
+  Building2,
+  User,
+  FileText,
+  Search,
+  Filter
+} from 'lucide-react';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
+import { Badge } from '@/components/ui/Badge';
+import type { CredentialRequest, RequestStatus } from '@/types/credentialRequest.types';
+import { REQUEST_STATUS_CONFIG } from '@/types/credentialRequest.types';
+
+interface RequestsListProps {
+  requests: CredentialRequest[];
+  loading?: boolean;
+  emptyMessage?: string;
+  viewMode: 'student' | 'institution';
+  onViewDetails: (request: CredentialRequest) => void;
+  onReview?: (request: CredentialRequest) => void;
+}
+
+export default function RequestsList({ 
+  requests, 
+  loading = false,
+  emptyMessage = "No requests yet",
+  viewMode,
+  onViewDetails,
+  onReview
+}: RequestsListProps) {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<RequestStatus | 'all'>('all');
+
+  // Filter requests
+  const filteredRequests = requests.filter(req => {
+    const matchesSearch = !searchQuery || 
+      req.programName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      req.institutionName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      req.requesterName?.toLowerCase().includes(searchQuery.toLowerCase());
+    
+    const matchesStatus = statusFilter === 'all' || req.status === statusFilter;
+    
+    return matchesSearch && matchesStatus;
+  });
+
+  // Get counts
+  const counts = {
+    total: requests.length,
+    pending: requests.filter(r => r.status === 'pending').length,
+    approved: requests.filter(r => r.status === 'approved').length,
+    rejected: requests.filter(r => r.status === 'rejected').length,
+    fulfilled: requests.filter(r => r.status === 'fulfilled').length,
+  };
+
+  const formatDate = (timestamp: number) => {
+    return new Date(timestamp).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    });
+  };
+
+  const getStatusIcon = (status: RequestStatus) => {
+    const config = REQUEST_STATUS_CONFIG[status];
+    const icons = {
+      Clock,
+      CheckCircle,
+      XCircle,
+      Award,
+      Ban
+    };
+    return icons[config.icon as keyof typeof icons];
+  };
+
+  if (loading) {
+    return (
+      <Card>
+        <CardContent className="py-12 text-center">
+          <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full mx-auto mb-3" />
+          <p className="text-muted-foreground">Loading requests...</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Stats Bar */}
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-2xl font-bold">{counts.total}</div>
+            <p className="text-sm text-muted-foreground">Total</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-2xl font-bold text-yellow-600">{counts.pending}</div>
+            <p className="text-sm text-muted-foreground">Pending</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-2xl font-bold text-green-600">{counts.approved}</div>
+            <p className="text-sm text-muted-foreground">Approved</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-2xl font-bold text-red-600">{counts.rejected}</div>
+            <p className="text-sm text-muted-foreground">Rejected</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-2xl font-bold text-blue-600">{counts.fulfilled}</div>
+            <p className="text-sm text-muted-foreground">Fulfilled</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Filters */}
+      <Card>
+        <CardContent className="pt-6">
+          <div className="flex flex-col sm:flex-row gap-4">
+            <div className="flex-1">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder={`Search ${viewMode === 'student' ? 'by program or institution' : 'by student or program'}...`}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+            </div>
+            
+            <div className="flex gap-2 flex-wrap">
+              <Button
+                variant={statusFilter === 'all' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setStatusFilter('all')}
+              >
+                All
+              </Button>
+              <Button
+                variant={statusFilter === 'pending' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setStatusFilter('pending')}
+              >
+                Pending
+              </Button>
+              <Button
+                variant={statusFilter === 'approved' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setStatusFilter('approved')}
+              >
+                Approved
+              </Button>
+              <Button
+                variant={statusFilter === 'rejected' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setStatusFilter('rejected')}
+              >
+                Rejected
+              </Button>
+              <Button
+                variant={statusFilter === 'fulfilled' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setStatusFilter('fulfilled')}
+              >
+                Fulfilled
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Requests List */}
+      {filteredRequests.length === 0 ? (
+        <Card>
+          <CardContent className="py-12 text-center">
+            <FileText className="h-12 w-12 mx-auto mb-3 text-muted-foreground opacity-50" />
+            <p className="text-lg font-medium mb-1">
+              {searchQuery || statusFilter !== 'all'
+                ? 'No requests match your filters'
+                : emptyMessage
+              }
+            </p>
+            <p className="text-sm text-muted-foreground">
+              {searchQuery || statusFilter !== 'all'
+                ? 'Try adjusting your search or filters'
+                : viewMode === 'student' 
+                  ? 'Submit a request to get started'
+                  : 'Requests from students will appear here'
+              }
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-3">
+          {filteredRequests.map((request) => {
+            const StatusIcon = getStatusIcon(request.status);
+            const statusConfig = REQUEST_STATUS_CONFIG[request.status];
+            
+            return (
+              <Card key={request.id} className="hover:shadow-md transition-shadow">
+                <CardContent className="pt-6">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      {/* Header */}
+                      <div className="flex items-start gap-3 mb-3">
+                        <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                          <FileText className="h-6 w-6 text-primary" />
+                        </div>
+                        
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h3 className="font-semibold text-lg truncate">
+                              {request.programName}
+                            </h3>
+                            <Badge 
+                              variant={
+                                request.status === 'approved' || request.status === 'fulfilled' 
+                                  ? 'success' 
+                                  : request.status === 'rejected' 
+                                  ? 'error'
+                                  : request.status === 'pending'
+                                  ? 'warning'
+                                  : 'outline'
+                              }
+                            >
+                              <StatusIcon className="h-3 w-3 mr-1" />
+                              {statusConfig.label}
+                            </Badge>
+                            <Badge variant="outline">{request.credentialType}</Badge>
+                          </div>
+                          
+                          <p className="text-sm text-muted-foreground">
+                            {request.fieldOfStudy}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Details Grid */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                        <div className="flex items-center text-muted-foreground">
+                          {viewMode === 'student' ? (
+                            <>
+                              <Building2 className="h-3 w-3 mr-2 flex-shrink-0" />
+                              <span className="truncate">{request.institutionName}</span>
+                            </>
+                          ) : (
+                            <>
+                              <User className="h-3 w-3 mr-2 flex-shrink-0" />
+                              <span className="truncate">
+                                {request.requesterName || `${request.requester.slice(0, 8)}...`}
+                              </span>
+                            </>
+                          )}
+                        </div>
+
+                        <div className="flex items-center text-muted-foreground">
+                          <Calendar className="h-3 w-3 mr-2 flex-shrink-0" />
+                          <span>Submitted {formatDate(request.createdAt)}</span>
+                        </div>
+
+                        {request.studentId && (
+                          <div className="flex items-center text-muted-foreground">
+                            <span className="font-medium mr-2">ID:</span>
+                            <span>{request.studentId}</span>
+                          </div>
+                        )}
+
+                        {request.supportingDocuments && request.supportingDocuments.length > 0 && (
+                          <div className="flex items-center text-muted-foreground">
+                            <FileText className="h-3 w-3 mr-2 flex-shrink-0" />
+                            <span>{request.supportingDocuments.length} document(s)</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Rejection Reason */}
+                      {request.status === 'rejected' && request.rejectionReason && (
+                        <div className="mt-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded p-2">
+                          <p className="text-xs font-semibold text-red-800 dark:text-red-400">
+                            Rejection Reason:
+                          </p>
+                          <p className="text-xs text-red-700 dark:text-red-300 mt-1">
+                            {request.rejectionReason}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex flex-col gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onViewDetails(request)}
+                      >
+                        <Eye className="h-3 w-3 mr-1" />
+                        View
+                      </Button>
+                      
+                      {viewMode === 'institution' && request.status === 'pending' && onReview && (
+                        <Button
+                          size="sm"
+                          onClick={() => onReview(request)}
+                        >
+                          Review
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+</file>
+
+<file path="src/components/requests/ReviewRequestModal.tsx">
+// src/components/requests/ReviewRequestModal.tsx
+import { useState } from 'react';
+import { 
+  CheckCircle, 
+  XCircle, 
+  FileText,
+  Building2,
+  User,
+  Calendar,
+  AlertCircle,
+  Loader2
+} from 'lucide-react';
+import { Modal } from '@/components/ui/Modal';
+import { Button } from '@/components/ui/Button';
+import { Badge } from '@/components/ui/Badge';
+import { toast } from 'sonner';
+import type { CredentialRequest } from '@/types/credentialRequest.types';
+import { useCredentialRequestsStore } from '@/store/credentialRequests.store';
+
+interface ReviewRequestModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  request: CredentialRequest | null;
+}
+
+export default function ReviewRequestModal({ 
+  isOpen, 
+  onClose, 
+  request 
+}: ReviewRequestModalProps) {
+  const [action, setAction] = useState<'approve' | 'reject' | null>(null);
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [processing, setProcessing] = useState(false);
+  const { updateRequest } = useCredentialRequestsStore();
+
+  if (!request) return null;
+
+  const formatDate = (timestamp: number) => {
+    return new Date(timestamp).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+  };
+
+  const handleSubmitReview = async () => {
+    if (!action) return;
+    
+    if (action === 'reject' && !rejectionReason.trim()) {
+      toast.error('Please provide a reason for rejection');
+      return;
+    }
+
+    setProcessing(true);
+
+    try {
+      // TODO: Submit to blockchain
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // Update local state
+      updateRequest(request.id, {
+        status: action === 'approve' ? 'approved' : 'rejected',
+        reviewedAt: Date.now(),
+        rejectionReason: action === 'reject' ? rejectionReason : undefined,
+      });
+
+      toast.success(
+        action === 'approve' 
+          ? 'Request approved successfully!' 
+          : 'Request rejected',
+        {
+          description: action === 'approve' 
+            ? 'You can now issue the credential'
+            : 'The student has been notified'
+        }
+      );
+
+      onClose();
+    } catch (error) {
+      console.error('Failed to review request:', error);
+      toast.error('Failed to process review');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} className="max-w-3xl">
+      <div className="p-6">
+        {/* Header */}
+        <div className="mb-6">
+          <h2 className="text-2xl font-bold mb-2">Review Credential Request</h2>
+          <p className="text-muted-foreground">
+            Review the student's information and decide whether to approve or reject
+          </p>
+        </div>
+
+        {/* Request Details */}
+        <div className="space-y-6 mb-6">
+          {/* Program Info */}
+          <div className="bg-accent rounded-lg p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Badge variant="outline">{request.credentialType}</Badge>
+              <h3 className="font-semibold text-lg">{request.programName}</h3>
+            </div>
+            <p className="text-muted-foreground">{request.fieldOfStudy}</p>
+          </div>
+
+          {/* Student Information */}
+          <div>
+            <label className="text-sm font-semibold text-muted-foreground mb-2 block">
+              <User className="inline h-3 w-3 mr-1" />
+              Student Information
+            </label>
+            <div className="bg-background border border-border rounded-lg p-4 space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Name:</span>
+                <span className="font-medium">{request.requesterName || 'Not provided'}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">DID:</span>
+                <code className="text-xs font-mono">
+                  {request.requester}
+                </code>
+              </div>
+              {request.studentId && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Student ID:</span>
+                  <span className="font-medium">{request.studentId}</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Academic Details */}
+          <div>
+            <label className="text-sm font-semibold text-muted-foreground mb-2 block">
+              Academic Information
+            </label>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-background border border-border rounded-lg p-3">
+                <p className="text-xs text-muted-foreground mb-1">Start Date</p>
+                <p className="font-medium">{formatDate(new Date(request.startDate).getTime())}</p>
+              </div>
+              <div className="bg-background border border-border rounded-lg p-3">
+                <p className="text-xs text-muted-foreground mb-1">End Date</p>
+                <p className="font-medium">{formatDate(new Date(request.endDate).getTime())}</p>
+              </div>
+              {request.major && (
+                <div className="bg-background border border-border rounded-lg p-3">
+                  <p className="text-xs text-muted-foreground mb-1">Major</p>
+                  <p className="font-medium">{request.major}</p>
+                </div>
+              )}
+              {request.minor && (
+                <div className="bg-background border border-border rounded-lg p-3">
+                  <p className="text-xs text-muted-foreground mb-1">Minor</p>
+                  <p className="font-medium">{request.minor}</p>
+                </div>
+              )}
+              {request.expectedGPA && (
+                <div className="bg-background border border-border rounded-lg p-3">
+                  <p className="text-xs text-muted-foreground mb-1">Expected GPA</p>
+                  <p className="font-medium">{request.expectedGPA}</p>
+                </div>
+              )}
+              {request.expectedGraduationDate && (
+                <div className="bg-background border border-border rounded-lg p-3">
+                  <p className="text-xs text-muted-foreground mb-1">Expected Graduation</p>
+                  <p className="font-medium">
+                    {formatDate(new Date(request.expectedGraduationDate).getTime())}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Supporting Documents */}
+          {request.supportingDocuments && request.supportingDocuments.length > 0 && (
+            <div>
+              <label className="text-sm font-semibold text-muted-foreground mb-2 block">
+                <FileText className="inline h-3 w-3 mr-1" />
+                Supporting Documents
+              </label>
+              <div className="space-y-2">
+                {request.supportingDocuments.map((hash, index) => (
+                  <div key={hash} className="bg-background border border-border rounded-lg p-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium">Document {index + 1}</p>
+                        <code className="text-xs text-muted-foreground">{hash}</code>
+                      </div>
+                      <Button variant="outline" size="sm">
+                        View
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Additional Notes */}
+          {request.additionalNotes && (
+            <div>
+              <label className="text-sm font-semibold text-muted-foreground mb-2 block">
+                Additional Notes from Student
+              </label>
+              <div className="bg-background border border-border rounded-lg p-4">
+                <p className="text-sm">{request.additionalNotes}</p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Decision Section */}
+        {!action ? (
+          <div className="space-y-4">
+            <p className="text-sm font-semibold">Make Your Decision</p>
+            <div className="grid grid-cols-2 gap-4">
+              <button
+                onClick={() => setAction('approve')}
+                className="p-6 border-2 border-green-500 bg-green-50 dark:bg-green-900/20 rounded-lg hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors"
+              >
+                <CheckCircle className="h-8 w-8 text-green-600 mx-auto mb-2" />
+                <p className="font-semibold text-green-800 dark:text-green-400">Approve</p>
+                <p className="text-xs text-green-700 dark:text-green-300 mt-1">
+                  Accept this request and prepare to issue credential
+                </p>
+              </button>
+
+              <button
+                onClick={() => setAction('reject')}
+                className="p-6 border-2 border-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
+              >
+                <XCircle className="h-8 w-8 text-red-600 mx-auto mb-2" />
+                <p className="font-semibold text-red-800 dark:text-red-400">Reject</p>
+                <p className="text-xs text-red-700 dark:text-red-300 mt-1">
+                  Decline this request with a reason
+                </p>
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {action === 'approve' ? (
+              <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
+                <div className="flex items-start gap-3">
+                  <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-500 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-semibold text-green-800 dark:text-green-400">
+                      Approve Request
+                    </p>
+                    <p className="text-sm text-green-700 dark:text-green-300 mt-1">
+                      The student will be notified and you can proceed to issue their credential.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-500 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-semibold text-red-800 dark:text-red-400">
+                        Reject Request
+                      </p>
+                      <p className="text-sm text-red-700 dark:text-red-300 mt-1">
+                        Please provide a clear reason for rejection to help the student understand.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold mb-2">
+                    Rejection Reason *
+                  </label>
+                  <textarea
+                    value={rejectionReason}
+                    onChange={(e) => setRejectionReason(e.target.value)}
+                    placeholder="Explain why this request cannot be approved..."
+                    className="flex min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    maxLength={500}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {rejectionReason.length}/500 characters
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setAction(null);
+                  setRejectionReason('');
+                }}
+                className="flex-1"
+              >
+                Change Decision
+              </Button>
+              <Button
+                onClick={handleSubmitReview}
+                disabled={processing || (action === 'reject' && !rejectionReason.trim())}
+                className="flex-1"
+              >
+                {processing ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    Confirm {action === 'approve' ? 'Approval' : 'Rejection'}
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+    </Modal>
   );
 }
 </file>
@@ -4773,6 +5661,15 @@ export function usePolkadotApi() {
 }
 </file>
 
+<file path="src/lib/utils/bn-shim.ts">
+// BN.js shim to handle import issues
+// @ts-ignore
+import BN from 'bn.js/lib/bn.js';
+
+export default BN;
+export { BN };
+</file>
+
 <file path="src/lib/utils/cn.ts">
 // cn.ts - Class name utility
 import { type ClassValue, clsx } from 'clsx';
@@ -5093,61 +5990,175 @@ export default function Credentials() {
 </file>
 
 <file path="src/pages/Dashboard.tsx">
+// src/pages/Dashboard.tsx
 import { useWalletStore } from '@/store/wallet.store';
 import { useDIDStore } from '@/store/did.store';
+import { useBalance } from '@/hooks/blockchain/useBalance';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { Award, Building2, CheckCircle } from 'lucide-react';
+import { Badge } from '@/components/ui/Badge';
+import { Award, Building2, CheckCircle, Wallet, AlertCircle, Key } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import CreateDIDPage from './CreateDIDPage';
+import { useState } from 'react';
+import CreateDIDModal from '@/components/did/CreateDIDModal';
 
 export default function Dashboard() {
-  const { isConnected } = useWalletStore();
-  const { hasDID, isInstitution } = useDIDStore();
+  const { isConnected, account } = useWalletStore();
+  const { hasDID, isInstitution, didAddress } = useDIDStore();
+  const { balance, loading: balanceLoading } = useBalance();
+  const [showCreateDID, setShowCreateDID] = useState(false);
 
+  // Not connected - show connection prompt
   if (!isConnected) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <Card className="max-w-md">
           <CardHeader>
-            <CardTitle>Connect Your Wallet</CardTitle>
+            <div className="flex items-center space-x-2 text-yellow-600 mb-2">
+              <AlertCircle className="h-5 w-5" />
+              <CardTitle>Connect Your Wallet</CardTitle>
+            </div>
             <CardDescription>
-              Please connect your wallet to access the dashboard
+              Please connect your Polkadot wallet to access the dashboard and manage your academic credentials
             </CardDescription>
           </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                You'll need a Polkadot wallet extension to continue:
+              </p>
+              <ul className="text-sm space-y-2 list-disc list-inside text-muted-foreground">
+                <li>Polkadot.js Extension</li>
+                <li>Talisman</li>
+                <li>SubWallet</li>
+              </ul>
+              <Button asChild className="w-full">
+                <a href="https://polkadot.js.org/extension/" target="_blank" rel="noopener noreferrer">
+                  Install Wallet Extension
+                </a>
+              </Button>
+            </div>
+          </CardContent>
         </Card>
       </div>
     );
   }
 
+  // No DID - show create DID prompt
   if (!hasDID) {
-    return <CreateDIDPage />;
+    return (
+      <>
+        <div className="max-w-4xl mx-auto py-8">
+          <div className="mb-8 text-center">
+            <h1 className="text-3xl font-bold mb-2">Welcome to Academic Verify</h1>
+            <p className="text-muted-foreground">
+              Let's create your decentralized identifier to get started
+            </p>
+          </div>
+          
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center">
+                <Key className="h-6 w-6 mr-2" />
+                Create Your DID
+              </CardTitle>
+              <CardDescription>
+                A Decentralized Identifier (DID) is required to receive and manage credentials
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                <p className="text-sm text-blue-800 dark:text-blue-400">
+                  <strong>What is a DID?</strong>
+                </p>
+                <p className="text-sm text-blue-700 dark:text-blue-300 mt-2">
+                  A DID is your unique identity on the blockchain. It allows institutions to issue 
+                  credentials directly to you, and enables anyone to verify your credentials without 
+                  needing to contact the issuing institution.
+                </p>
+              </div>
+              
+              <Button onClick={() => setShowCreateDID(true)} className="w-full">
+                <Key className="h-4 w-4 mr-2" />
+                Create DID Now
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+
+        <CreateDIDModal
+          isOpen={showCreateDID}
+          onClose={() => setShowCreateDID(false)}
+        />
+      </>
+    );
   }
 
+  // Has DID - show full dashboard
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold mb-2">
-          Welcome back!
-        </h1>
-        <p className="text-muted-foreground">
-          {isInstitution ? 'Manage your institution and issue credentials' : 'Manage your credentials and academic identity'}
-        </p>
+      {/* Welcome Section */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold mb-2">
+            Welcome back, {account?.name || 'there'}!
+          </h1>
+          <p className="text-muted-foreground">
+            {isInstitution 
+              ? 'Manage your institution and issue credentials' 
+              : 'Manage your credentials and academic identity'
+            }
+          </p>
+        </div>
+        
+        {/* Balance Display */}
+        {balance && (
+          <Card className="bg-gradient-to-br from-primary/10 to-purple-500/10">
+            <CardContent className="pt-6">
+              <div className="flex items-center space-x-2 mb-1">
+                <Wallet className="h-4 w-4 text-muted-foreground" />
+                <span className="text-xs text-muted-foreground">Balance</span>
+              </div>
+              <div className="text-2xl font-bold">
+                {balanceLoading ? '...' : balance.formatted}
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
+
+      {/* Account Info */}
+      <Card>
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between">
+            <div className="space-y-1">
+              <p className="text-sm text-muted-foreground">DID Address</p>
+              <code className="text-xs font-mono bg-muted px-2 py-1 rounded">
+                {didAddress}
+              </code>
+            </div>
+            <div className="flex gap-2">
+              <Badge variant="success">Active</Badge>
+              {isInstitution && <Badge variant="secondary">Institution</Badge>}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Quick Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
-              Total Credentials
+              {isInstitution ? 'Issued Credentials' : 'Total Credentials'}
             </CardTitle>
             <Award className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">0</div>
             <p className="text-xs text-muted-foreground">
-              Academic credentials
+              {isInstitution ? 'Credentials issued' : 'Academic credentials'}
             </p>
           </CardContent>
         </Card>
@@ -5155,14 +6166,14 @@ export default function Dashboard() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
-              {isInstitution ? 'Issued' : 'Verified'}
+              {isInstitution ? 'Active Recipients' : 'Verified'}
             </CardTitle>
             <CheckCircle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">0</div>
             <p className="text-xs text-muted-foreground">
-              {isInstitution ? 'Credentials issued' : 'Times verified'}
+              {isInstitution ? 'Unique recipients' : 'Times verified'}
             </p>
           </CardContent>
         </Card>
@@ -5189,20 +6200,93 @@ export default function Dashboard() {
           <CardTitle>Quick Actions</CardTitle>
         </CardHeader>
         <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Link to="/credentials">
-            <Button variant="outline" className="w-full justify-start">
-              <Award className="h-4 w-4 mr-2" />
-              View My Credentials
-            </Button>
-          </Link>
-          <Link to="/verify">
-            <Button variant="outline" className="w-full justify-start">
-              <CheckCircle className="h-4 w-4 mr-2" />
-              Verify a Credential
-            </Button>
-          </Link>
+          {isInstitution ? (
+            <>
+              <Link to="/institution/issue">
+                <Button variant="outline" className="w-full justify-start h-auto py-4">
+                  <div className="flex flex-col items-start w-full">
+                    <div className="flex items-center space-x-2 mb-1">
+                      <Award className="h-4 w-4" />
+                      <span className="font-semibold">Issue Credential</span>
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      Issue a new credential to a student
+                    </span>
+                  </div>
+                </Button>
+              </Link>
+              <Link to="/institution/issued">
+                <Button variant="outline" className="w-full justify-start h-auto py-4">
+                  <div className="flex flex-col items-start w-full">
+                    <div className="flex items-center space-x-2 mb-1">
+                      <CheckCircle className="h-4 w-4" />
+                      <span className="font-semibold">View Issued</span>
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      See all credentials you've issued
+                    </span>
+                  </div>
+                </Button>
+              </Link>
+            </>
+          ) : (
+            <>
+              <Link to="/credentials">
+                <Button variant="outline" className="w-full justify-start h-auto py-4">
+                  <div className="flex flex-col items-start w-full">
+                    <div className="flex items-center space-x-2 mb-1">
+                      <Award className="h-4 w-4" />
+                      <span className="font-semibold">My Credentials</span>
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      View and manage your credentials
+                    </span>
+                  </div>
+                </Button>
+              </Link>
+              <Link to="/verify">
+                <Button variant="outline" className="w-full justify-start h-auto py-4">
+                  <div className="flex flex-col items-start w-full">
+                    <div className="flex items-center space-x-2 mb-1">
+                      <CheckCircle className="h-4 w-4" />
+                      <span className="font-semibold">Verify Credential</span>
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      Verify any academic credential
+                    </span>
+                  </div>
+                </Button>
+              </Link>
+            </>
+          )}
         </CardContent>
       </Card>
+
+      {/* Register as Institution */}
+      {!isInstitution && (
+        <Card className="border-primary/50">
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-start space-x-4">
+                <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <Building2 className="h-6 w-6 text-primary" />
+                </div>
+                <div>
+                  <h3 className="font-semibold mb-1">Are you an institution?</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Register as an educational institution to issue credentials to students
+                  </p>
+                </div>
+              </div>
+              <Button asChild>
+                <Link to="/institution">
+                  Register Now
+                </Link>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
@@ -5479,6 +6563,269 @@ export default function Institution() {
           </div>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+</file>
+
+<file path="src/pages/InstitutionRequests.tsx">
+// src/pages/InstitutionRequests.tsx
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { FileText, RefreshCw, AlertCircle } from 'lucide-react';
+import { Button } from '@/components/ui/Button';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
+import RequestsList from '@/components/requests/RequestsList';
+import ReviewRequestModal from '@/components/requests/ReviewRequestModal';
+import { useWalletStore } from '@/store/wallet.store';
+import { useDIDStore } from '@/store/did.store';
+import { useCredentialRequestsStore } from '@/store/credentialRequests.store';
+import type { CredentialRequest } from '@/types/credentialRequest.types';
+import { toast } from 'sonner';
+
+export default function InstitutionRequests() {
+  const navigate = useNavigate();
+  const { isConnected } = useWalletStore();
+  const { hasDID, isInstitution, didAddress } = useDIDStore();
+  const { 
+    receivedRequests, 
+    setReceivedRequests, 
+    loading, 
+    setLoading,
+    getPendingCount
+  } = useCredentialRequestsStore();
+  
+  const [selectedRequest, setSelectedRequest] = useState<CredentialRequest | null>(null);
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  useEffect(() => {
+    if (!isInstitution) {
+      navigate('/institution');
+      return;
+    }
+
+    if (isConnected && hasDID && didAddress) {
+      fetchReceivedRequests();
+    }
+  }, [isConnected, hasDID, didAddress, isInstitution]);
+
+  const fetchReceivedRequests = async () => {
+    setLoading(true);
+    try {
+      // TODO: Query blockchain for requests where institution = didAddress
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Mock data
+      const mockRequests: CredentialRequest[] = [
+        {
+          id: 'req_3',
+          requestId: 3,
+          requester: '5DTestDqcsdhBM8Y1s5eHMvx1tyDWRxf8LxbCQ8eW3Lw1Kk',
+          requesterName: 'John Doe',
+          institution: didAddress!,
+          credentialType: "Bachelor's Degree",
+          programName: 'Bachelor of Science in Computer Science',
+          fieldOfStudy: 'Computer Science',
+          startDate: '2020-09-01',
+          endDate: '2024-05-15',
+          studentId: 'STU123456',
+          major: 'Software Engineering',
+          minor: 'Mathematics',
+          expectedGPA: '3.92',
+          additionalNotes: 'I participated in the honors program and completed a senior thesis on distributed systems.',
+          status: 'pending',
+          createdAt: Date.now() - 2 * 24 * 60 * 60 * 1000,
+          updatedAt: Date.now() - 2 * 24 * 60 * 60 * 1000,
+          supportingDocuments: [
+            'QmTest1234567890abcdefghijklmnopqrstuvwxyz',
+            'QmTest0987654321zyxwvutsrqponmlkjihgfedcba'
+          ]
+        },
+        {
+          id: 'req_4',
+          requestId: 4,
+          requester: '5ETestDqcsdhBM8Y1s5eHMvx1tyDWRxf8LxbCQ8eW3Lw2Kk',
+          requesterName: 'Jane Smith',
+          institution: didAddress!,
+          credentialType: "Master's Degree",
+          programName: 'Master of Science in Data Science',
+          fieldOfStudy: 'Data Science',
+          startDate: '2022-09-01',
+          endDate: '2024-05-15',
+          studentId: 'STU789012',
+          expectedGPA: '3.85',
+          status: 'pending',
+          createdAt: Date.now() - 5 * 24 * 60 * 60 * 1000,
+          updatedAt: Date.now() - 5 * 24 * 60 * 60 * 1000,
+        },
+        {
+          id: 'req_5',
+          requestId: 5,
+          requester: '5FTestDqcsdhBM8Y1s5eHMvx1tyDWRxf8LxbCQ8eW3Lw3Kk',
+          requesterName: 'Bob Johnson',
+          institution: didAddress!,
+          credentialType: 'Certificate',
+          programName: 'Full Stack Web Development Bootcamp',
+          fieldOfStudy: 'Web Development',
+          startDate: '2024-01-01',
+          endDate: '2024-04-30',
+          status: 'approved',
+          createdAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+          updatedAt: Date.now() - 10 * 24 * 60 * 60 * 1000,
+          reviewedAt: Date.now() - 10 * 24 * 60 * 60 * 1000,
+        },
+      ];
+
+      setReceivedRequests(mockRequests);
+    } catch (error) {
+      console.error('Failed to fetch requests:', error);
+      toast.error('Failed to load requests');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await fetchReceivedRequests();
+    setRefreshing(false);
+    toast.success('Requests refreshed');
+  };
+
+  const handleViewDetails = (request: CredentialRequest) => {
+    setSelectedRequest(request);
+    // Could open a detail-only modal
+    toast.info('Opening request details...');
+  };
+
+  const handleReview = (request: CredentialRequest) => {
+    setSelectedRequest(request);
+    setShowReviewModal(true);
+  };
+
+  if (!isConnected || !hasDID) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Card className="max-w-md">
+          <CardHeader>
+            <CardTitle>Access Required</CardTitle>
+            <CardDescription>
+              {!isConnected 
+                ? 'Please connect your wallet to view credential requests'
+                : 'You need a DID to manage requests'
+              }
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!isInstitution) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Card className="max-w-md">
+          <CardHeader>
+            <div className="flex items-center space-x-2 text-red-600 mb-2">
+              <AlertCircle className="h-5 w-5" />
+              <CardTitle>Institution Access Required</CardTitle>
+            </div>
+            <CardDescription>
+              Only verified institutions can access this page
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button onClick={() => navigate('/institution')} className="w-full">
+              Register as Institution
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  const pendingCount = getPendingCount();
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold flex items-center">
+            <FileText className="h-8 w-8 mr-3 text-primary" />
+            Credential Requests
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            Review and approve student credential requests
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={handleRefresh}
+            disabled={refreshing}
+          >
+            <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+        </div>
+      </div>
+
+      {/* Pending Alert */}
+      {pendingCount > 0 && (
+        <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
+          <div className="flex items-start space-x-3">
+            <AlertCircle className="h-5 w-5 text-yellow-600 dark:text-yellow-500 flex-shrink-0 mt-0.5" />
+            <div className="text-sm">
+              <p className="font-semibold text-yellow-800 dark:text-yellow-400">
+                {pendingCount} Request{pendingCount !== 1 ? 's' : ''} Awaiting Review
+              </p>
+              <p className="text-yellow-700 dark:text-yellow-300 mt-1">
+                Students are waiting for your response. Please review pending requests promptly.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Info Banner */}
+      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+        <div className="flex items-start space-x-3">
+          <FileText className="h-5 w-5 text-blue-600 dark:text-blue-500 flex-shrink-0 mt-0.5" />
+          <div className="text-sm">
+            <p className="font-semibold text-blue-800 dark:text-blue-400">
+              Review Guidelines
+            </p>
+            <ul className="text-blue-700 dark:text-blue-300 mt-2 space-y-1 list-disc list-inside">
+              <li>Verify student information matches your records</li>
+              <li>Check supporting documents carefully</li>
+              <li>Provide clear rejection reasons if declining</li>
+              <li>Approved requests can be fulfilled immediately</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      {/* Requests List */}
+      <RequestsList
+        requests={receivedRequests}
+        loading={loading}
+        emptyMessage="No credential requests received yet"
+        viewMode="institution"
+        onViewDetails={handleViewDetails}
+        onReview={handleReview}
+      />
+
+      {/* Review Modal */}
+      <ReviewRequestModal
+        isOpen={showReviewModal}
+        onClose={() => {
+          setShowReviewModal(false);
+          setSelectedRequest(null);
+        }}
+        request={selectedRequest}
+      />
     </div>
   );
 }
@@ -5918,6 +7265,239 @@ export default function IssuedCredentials() {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+</file>
+
+<file path="src/pages/MyRequests.tsx">
+// src/pages/MyRequests.tsx
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Plus, FileText, RefreshCw } from 'lucide-react';
+import { Button } from '@/components/ui/Button';
+import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
+import { Modal } from '@/components/ui/Modal';
+import RequestsList from '@/components/requests/RequestsList';
+import CreateRequestForm from '@/components/requests/CreateRequestForm';
+import { useWalletStore } from '@/store/wallet.store';
+import { useDIDStore } from '@/store/did.store';
+import { useCredentialRequestsStore } from '@/store/credentialRequests.store';
+import type { CredentialRequest } from '@/types/credentialRequest.types';
+import { toast } from 'sonner';
+
+export default function MyRequests() {
+  const navigate = useNavigate();
+  const { isConnected } = useWalletStore();
+  const { hasDID, didAddress } = useDIDStore();
+  const { 
+    myRequests, 
+    setMyRequests, 
+    loading, 
+    setLoading 
+  } = useCredentialRequestsStore();
+  
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [selectedRequest, setSelectedRequest] = useState<CredentialRequest | null>(null);
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  useEffect(() => {
+    if (isConnected && hasDID && didAddress) {
+      fetchMyRequests();
+    }
+  }, [isConnected, hasDID, didAddress]);
+
+  const fetchMyRequests = async () => {
+    setLoading(true);
+    try {
+      // TODO: Query blockchain for requests where requester = didAddress
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Mock data
+      const mockRequests: CredentialRequest[] = [
+        {
+          id: 'req_1',
+          requestId: 1,
+          requester: didAddress!,
+          institution: '5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY',
+          institutionName: 'Massachusetts Institute of Technology',
+          credentialType: "Bachelor's Degree",
+          programName: 'Bachelor of Science in Computer Science',
+          fieldOfStudy: 'Computer Science',
+          startDate: '2020-09-01',
+          endDate: '2024-05-15',
+          major: 'Software Engineering',
+          expectedGPA: '3.85',
+          status: 'pending',
+          createdAt: Date.now() - 7 * 24 * 60 * 60 * 1000,
+          updatedAt: Date.now() - 7 * 24 * 60 * 60 * 1000,
+        },
+        {
+          id: 'req_2',
+          requestId: 2,
+          requester: didAddress!,
+          institution: '5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty',
+          institutionName: 'Stanford University',
+          credentialType: 'Certificate',
+          programName: 'Machine Learning Specialization',
+          fieldOfStudy: 'Artificial Intelligence',
+          startDate: '2024-01-01',
+          endDate: '2024-03-30',
+          status: 'approved',
+          createdAt: Date.now() - 30 * 24 * 60 * 60 * 1000,
+          updatedAt: Date.now() - 5 * 24 * 60 * 60 * 1000,
+          reviewedAt: Date.now() - 5 * 24 * 60 * 60 * 1000,
+        },
+      ];
+
+      setMyRequests(mockRequests);
+    } catch (error) {
+      console.error('Failed to fetch requests:', error);
+      toast.error('Failed to load requests');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await fetchMyRequests();
+    setRefreshing(false);
+    toast.success('Requests refreshed');
+  };
+
+  const handleViewDetails = (request: CredentialRequest) => {
+    setSelectedRequest(request);
+    setShowDetailModal(true);
+  };
+
+  if (!isConnected || !hasDID) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Card className="max-w-md">
+          <CardHeader>
+            <CardTitle>Access Required</CardTitle>
+            <CardDescription>
+              {!isConnected 
+                ? 'Please connect your wallet to view credential requests'
+                : 'You need a DID to request credentials'
+              }
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold flex items-center">
+            <FileText className="h-8 w-8 mr-3 text-primary" />
+            My Requests
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            Track your credential requests to institutions
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={handleRefresh}
+            disabled={refreshing}
+          >
+            <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+          <Button onClick={() => setShowCreateModal(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            New Request
+          </Button>
+        </div>
+      </div>
+
+      {/* Info Banner */}
+      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+        <div className="flex items-start space-x-3">
+          <FileText className="h-5 w-5 text-blue-600 dark:text-blue-500 flex-shrink-0 mt-0.5" />
+          <div className="text-sm">
+            <p className="font-semibold text-blue-800 dark:text-blue-400">
+              How It Works
+            </p>
+            <ul className="text-blue-700 dark:text-blue-300 mt-2 space-y-1 list-disc list-inside">
+              <li>Submit a request to any verified institution</li>
+              <li>The institution reviews your information</li>
+              <li>If approved, they'll issue your credential</li>
+              <li>Track all your requests in one place</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      {/* Requests List */}
+      <RequestsList
+        requests={myRequests}
+        loading={loading}
+        emptyMessage="You haven't submitted any requests yet"
+        viewMode="student"
+        onViewDetails={handleViewDetails}
+      />
+
+      {/* Create Request Modal */}
+      <Modal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        className="max-w-4xl"
+      >
+        <CreateRequestForm
+          onSuccess={() => {
+            setShowCreateModal(false);
+            fetchMyRequests();
+          }}
+          onCancel={() => setShowCreateModal(false)}
+        />
+      </Modal>
+
+      {/* Detail Modal */}
+      <Modal
+        isOpen={showDetailModal}
+        onClose={() => setShowDetailModal(false)}
+        className="max-w-2xl"
+      >
+        {selectedRequest && (
+          <div className="p-6">
+            <h2 className="text-2xl font-bold mb-4">Request Details</h2>
+            {/* Add detailed view here - similar to ReviewRequestModal but read-only */}
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-semibold text-muted-foreground">Program</label>
+                <p className="text-lg">{selectedRequest.programName}</p>
+              </div>
+              <div>
+                <label className="text-sm font-semibold text-muted-foreground">Institution</label>
+                <p>{selectedRequest.institutionName}</p>
+              </div>
+              <div>
+                <label className="text-sm font-semibold text-muted-foreground">Status</label>
+                <p className="capitalize">{selectedRequest.status}</p>
+              </div>
+              {selectedRequest.rejectionReason && (
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3">
+                  <p className="text-sm font-semibold text-red-800 dark:text-red-400">
+                    Rejection Reason:
+                  </p>
+                  <p className="text-sm text-red-700 dark:text-red-300 mt-1">
+                    {selectedRequest.rejectionReason}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
@@ -6671,6 +8251,143 @@ export const useDIDStore = create<DIDState>((set) => ({
 }));
 </file>
 
+<file path="src/store/notifications.store.ts">
+// src/store/notifications.store.ts
+import { create } from 'zustand';
+
+export type NotificationType = 
+  | 'request_received'
+  | 'request_approved'
+  | 'request_rejected'
+  | 'credential_issued'
+  | 'credential_revoked'
+  | 'endorsement_received'
+  | 'system';
+
+export interface Notification {
+  id: string;
+  type: NotificationType;
+  title: string;
+  message: string;
+  read: boolean;
+  createdAt: number;
+  actionUrl?: string;
+  metadata?: Record<string, any>;
+}
+
+interface NotificationsState {
+  notifications: Notification[];
+  unreadCount: number;
+  
+  addNotification: (notification: Omit<Notification, 'id' | 'read' | 'createdAt'>) => void;
+  markAsRead: (id: string) => void;
+  markAllAsRead: () => void;
+  removeNotification: (id: string) => void;
+  clearAll: () => void;
+  getUnreadCount: () => number;
+}
+
+export const useNotificationsStore = create<NotificationsState>((set, get) => ({
+  notifications: [],
+  unreadCount: 0,
+
+  addNotification: (notification) => {
+    const newNotification: Notification = {
+      ...notification,
+      id: 'notif_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
+      read: false,
+      createdAt: Date.now(),
+    };
+
+    set((state) => ({
+      notifications: [newNotification, ...state.notifications],
+      unreadCount: state.unreadCount + 1,
+    }));
+  },
+
+  markAsRead: (id) => {
+    set((state) => ({
+      notifications: state.notifications.map((n) =>
+        n.id === id ? { ...n, read: true } : n
+      ),
+      unreadCount: Math.max(0, state.unreadCount - 1),
+    }));
+  },
+
+  markAllAsRead: () => {
+    set((state) => ({
+      notifications: state.notifications.map((n) => ({ ...n, read: true })),
+      unreadCount: 0,
+    }));
+  },
+
+  removeNotification: (id) => {
+    set((state) => {
+      const notification = state.notifications.find((n) => n.id === id);
+      const wasUnread = notification && !notification.read;
+      
+      return {
+        notifications: state.notifications.filter((n) => n.id !== id),
+        unreadCount: wasUnread ? Math.max(0, state.unreadCount - 1) : state.unreadCount,
+      };
+    });
+  },
+
+  clearAll: () => {
+    set({ notifications: [], unreadCount: 0 });
+  },
+
+  getUnreadCount: () => {
+    return get().unreadCount;
+  },
+}));
+
+// Helper function to create notifications for common events
+export const createNotification = {
+  requestReceived: (requesterName: string, programName: string) => ({
+    type: 'request_received' as const,
+    title: 'New Credential Request',
+    message: `${requesterName} has requested a credential for ${programName}`,
+    actionUrl: '/institution/requests',
+  }),
+
+  requestApproved: (institutionName: string, programName: string) => ({
+    type: 'request_approved' as const,
+    title: 'Request Approved',
+    message: `${institutionName} approved your request for ${programName}`,
+    actionUrl: '/my-requests',
+  }),
+
+  requestRejected: (institutionName: string, programName: string) => ({
+    type: 'request_rejected' as const,
+    title: 'Request Rejected',
+    message: `${institutionName} rejected your request for ${programName}`,
+    actionUrl: '/my-requests',
+  }),
+
+  credentialIssued: (institutionName: string, credentialType: string) => ({
+    type: 'credential_issued' as const,
+    title: 'Credential Issued',
+    message: `${institutionName} issued your ${credentialType}`,
+    actionUrl: '/credentials',
+  }),
+
+  credentialRevoked: (institutionName: string, credentialType: string) => ({
+    type: 'credential_revoked' as const,
+    title: 'Credential Revoked',
+    message: `Your ${credentialType} from ${institutionName} has been revoked`,
+    actionUrl: '/credentials',
+  }),
+
+  endorsementReceived: (endorserName: string) => ({
+    type: 'endorsement_received' as const,
+    title: 'New Endorsement',
+    message: `${endorserName} endorsed your institution`,
+    actionUrl: '/institution',
+  }),
+};
+</file>
+
 <file path="src/store/ui.store.ts">
 // ui.store.ts
 import { create } from 'zustand';
@@ -6765,6 +8482,110 @@ export const useWalletStore = create<WalletState>()((set, get) => ({
 }));
 </file>
 
+<file path="src/types/credentialRequest.types.ts">
+// src/types/credentialRequest.types.ts
+
+export type RequestStatus = 
+  | 'pending' 
+  | 'approved' 
+  | 'rejected' 
+  | 'fulfilled' 
+  | 'cancelled';
+
+export interface CredentialRequest {
+  id: string;
+  requestId: number; // On-chain ID
+  requester: string; // DID address
+  requesterName?: string;
+  institution: string; // Institution DID
+  institutionName?: string;
+  
+  // Request Details
+  credentialType: string;
+  programName: string;
+  fieldOfStudy: string;
+  startDate: string;
+  endDate: string;
+  expectedGraduationDate?: string;
+  
+  // Additional Info
+  studentId?: string;
+  major?: string;
+  minor?: string;
+  expectedGPA?: string;
+  additionalNotes?: string;
+  supportingDocuments?: string[]; // IPFS hashes
+  
+  // Status & Tracking
+  status: RequestStatus;
+  createdAt: number;
+  updatedAt: number;
+  reviewedAt?: number;
+  reviewedBy?: string;
+  rejectionReason?: string;
+  
+  // Blockchain Info
+  blockNumber?: number;
+  transactionHash?: string;
+}
+
+export interface CreateRequestFormData {
+  institution: string;
+  credentialType: string;
+  programName: string;
+  fieldOfStudy: string;
+  startDate: string;
+  endDate: string;
+  expectedGraduationDate?: string;
+  studentId?: string;
+  major?: string;
+  minor?: string;
+  expectedGPA?: string;
+  additionalNotes?: string;
+  supportingDocuments?: File[];
+}
+
+export interface ReviewRequestData {
+  requestId: string;
+  action: 'approve' | 'reject';
+  rejectionReason?: string;
+  notes?: string;
+}
+
+export const REQUEST_STATUS_CONFIG = {
+  pending: {
+    label: 'Pending Review',
+    color: 'yellow',
+    icon: 'Clock',
+    description: 'Waiting for institution review'
+  },
+  approved: {
+    label: 'Approved',
+    color: 'green',
+    icon: 'CheckCircle',
+    description: 'Approved, credential pending issuance'
+  },
+  rejected: {
+    label: 'Rejected',
+    color: 'red',
+    icon: 'XCircle',
+    description: 'Request was rejected'
+  },
+  fulfilled: {
+    label: 'Fulfilled',
+    color: 'blue',
+    icon: 'Award',
+    description: 'Credential has been issued'
+  },
+  cancelled: {
+    label: 'Cancelled',
+    color: 'gray',
+    icon: 'Ban',
+    description: 'Request was cancelled'
+  }
+} as const;
+</file>
+
 <file path="src/App.css">
 #root {
   max-width: 1280px;
@@ -6811,7 +8632,7 @@ export const useWalletStore = create<WalletState>()((set, get) => ({
 </file>
 
 <file path="src/App.tsx">
-// src/App.tsx
+// src/App.tsx (Updated with new routes)
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
@@ -6831,6 +8652,10 @@ import Verify from './pages/Verify';
 import Institutions from './pages/Institutions';
 import Settings from './pages/Settings';
 import CreateDIDPage from './pages/CreateDIDPage';
+
+// New Request Pages
+import MyRequests from './pages/MyRequests';
+import InstitutionRequests from './pages/InstitutionRequests';
 
 // Error Boundary
 import ErrorBoundary from './components/error/ErrorBoundary';
@@ -6881,12 +8706,14 @@ function App() {
                     <Route path="/dashboard" element={<Dashboard />} />
                     <Route path="/create-did" element={<CreateDIDPage />} />
                     <Route path="/credentials" element={<Credentials />} />
+                    <Route path="/my-requests" element={<MyRequests />} />
                     <Route path="/settings" element={<Settings />} />
                     
                     {/* Institution Routes */}
                     <Route path="/institution" element={<Institution />} />
                     <Route path="/institution/issue" element={<IssueCredential />} />
                     <Route path="/institution/issued" element={<IssuedCredentials />} />
+                    <Route path="/institution/requests" element={<InstitutionRequests />} />
                   </Routes>
                 </MainLayout>
               </Suspense>
@@ -7415,23 +9242,42 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
+import { nodePolyfills } from 'vite-plugin-node-polyfills'
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [
+    react(), 
+    tailwindcss(),
+    nodePolyfills({
+      // Whether to polyfill `node:` protocol imports.
+      protocolImports: true,
+      // Whether to polyfill specific globals.
+      globals: {
+        Buffer: true,
+        global: true,
+        process: true,
+      },
+    })
+  ],
   
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      // Fix bn.js default export issue
+      'bn.js': path.resolve(__dirname, './node_modules/bn.js/lib/bn.js'),
     },
   },
   
   optimizeDeps: {
-    // Exclude Polkadot packages from pre-bundling
+    include: [
+      'bn.js',
+      '@polkadot/util',
+      '@polkadot/util-crypto',
+    ],
+    // Exclude Polkadot packages from pre-bundling to avoid issues
     exclude: [
       '@polkadot/api',
       '@polkadot/extension-dapp',
-      '@polkadot/util',
-      '@polkadot/util-crypto',
       '@polkadot/keyring',
       '@polkadot/types',
       '@polkadot/rpc-provider',
@@ -7441,6 +9287,10 @@ export default defineConfig({
       supported: {
         bigint: true,
       },
+      // Handle Node.js built-ins
+      define: {
+        global: 'globalThis',
+      },
     },
   },
   
@@ -7449,11 +9299,24 @@ export default defineConfig({
     commonjsOptions: {
       transformMixedEsModules: true,
     },
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'polkadot-core': ['@polkadot/api', '@polkadot/util', '@polkadot/util-crypto'],
+        },
+      },
+    },
   },
   
-  // Define global variables
+  // Define global variables for browser compatibility
   define: {
     global: 'globalThis',
+    'process.env': {},
+  },
+  
+  server: {
+    port: 5174,
+    strictPort: false,
   },
 })
 </file>

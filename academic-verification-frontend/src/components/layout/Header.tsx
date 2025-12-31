@@ -1,8 +1,10 @@
+// src/components/layout/Header.tsx (Updated)
 import { Link } from 'react-router-dom';
 import { Menu, X } from 'lucide-react';
 import { useState } from 'react';
 import WalletConnect from '../blockchain/WalletConnect';
 import ChainStatus from '../blockchain/ChainStatus';
+import NotificationBell from './NotificationBell';
 import { Button } from '../ui/Button';
 
 export default function Header() {
@@ -37,6 +39,12 @@ export default function Header() {
               Credentials
             </Link>
             <Link 
+              to="/my-requests" 
+              className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+            >
+              My Requests
+            </Link>
+            <Link 
               to="/institutions" 
               className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
             >
@@ -51,11 +59,14 @@ export default function Header() {
           </nav>
 
           {/* Right side actions */}
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-3">
             {/* Chain Status */}
             <div className="hidden sm:block">
               <ChainStatus />
             </div>
+
+            {/* Notification Bell */}
+            <NotificationBell />
 
             {/* Wallet Connect */}
             <WalletConnect />
@@ -93,6 +104,13 @@ export default function Header() {
                 onClick={() => setMobileMenuOpen(false)}
               >
                 Credentials
+              </Link>
+              <Link 
+                to="/my-requests" 
+                className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors py-2"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                My Requests
               </Link>
               <Link 
                 to="/institutions" 

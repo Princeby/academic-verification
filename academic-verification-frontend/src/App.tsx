@@ -1,4 +1,4 @@
-// src/App.tsx
+// src/App.tsx (Updated with new routes)
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
@@ -18,6 +18,10 @@ import Verify from './pages/Verify';
 import Institutions from './pages/Institutions';
 import Settings from './pages/Settings';
 import CreateDIDPage from './pages/CreateDIDPage';
+
+// New Request Pages
+import MyRequests from './pages/MyRequests';
+import InstitutionRequests from './pages/InstitutionRequests';
 
 // Error Boundary
 import ErrorBoundary from './components/error/ErrorBoundary';
@@ -68,12 +72,14 @@ function App() {
                     <Route path="/dashboard" element={<Dashboard />} />
                     <Route path="/create-did" element={<CreateDIDPage />} />
                     <Route path="/credentials" element={<Credentials />} />
+                    <Route path="/my-requests" element={<MyRequests />} />
                     <Route path="/settings" element={<Settings />} />
                     
                     {/* Institution Routes */}
                     <Route path="/institution" element={<Institution />} />
                     <Route path="/institution/issue" element={<IssueCredential />} />
                     <Route path="/institution/issued" element={<IssuedCredentials />} />
+                    <Route path="/institution/requests" element={<InstitutionRequests />} />
                   </Routes>
                 </MainLayout>
               </Suspense>
