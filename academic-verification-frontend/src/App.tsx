@@ -1,18 +1,33 @@
+// src/App.tsx
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
+import { Suspense } from 'react';
+
+// Layout
 import MainLayout from './components/layout/MainLayout';
+
+// Pages
 import Home from './pages/Home';
 import Dashboard from './pages/Dashboard';
 import Credentials from './pages/Credentials';
 import Institution from './pages/Institution';
 import IssueCredential from './pages/IssueCredential';
+import IssuedCredentials from './pages/IssuedCredentials';
 import Verify from './pages/Verify';
 import Institutions from './pages/Institutions';
-import ErrorBoundary from './components/error/ErrorBoundary';
-import { Suspense } from 'react';
-import { Spinner } from './components/ui/Spinner';
 import Settings from './pages/Settings';
+import CreateDIDPage from './pages/CreateDIDPage';
+
+// Error Boundary
+import ErrorBoundary from './components/error/ErrorBoundary';
+
+// UI
+import { Spinner } from './components/ui/Spinner';
+
+// Providers
+import { PolkadotProvider } from './providers/PolkadotProvider';
+import { WalletProvider } from './providers/WalletProvider';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -38,23 +53,34 @@ function App() {
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <Router>
-          <Suspense fallback={<LoadingFallback />}>
-            <MainLayout>
-              <Routes>
-                <Route path="/" element={<Home />} />
-                <Route path="/dashboard" element={<Dashboard />} />
-                <Route path="/credentials" element={<Credentials />} />
-                <Route path="/institution" element={<Institution />} />
-                <Route path="/institution/issue" element={<IssueCredential />} />
-                <Route path="/verify" element={<Verify />} />
-                <Route path="/institutions" element={<Institutions />} />
-                <Route path="/settings" element={<Settings />} />
-              </Routes>
-            </MainLayout>
-          </Suspense>
-        </Router>
-        <Toaster position="top-right" richColors />
+        <PolkadotProvider>
+          <WalletProvider>
+            <Router>
+              <Suspense fallback={<LoadingFallback />}>
+                <MainLayout>
+                  <Routes>
+                    {/* Public Routes */}
+                    <Route path="/" element={<Home />} />
+                    <Route path="/verify" element={<Verify />} />
+                    <Route path="/institutions" element={<Institutions />} />
+                    
+                    {/* User Routes */}
+                    <Route path="/dashboard" element={<Dashboard />} />
+                    <Route path="/create-did" element={<CreateDIDPage />} />
+                    <Route path="/credentials" element={<Credentials />} />
+                    <Route path="/settings" element={<Settings />} />
+                    
+                    {/* Institution Routes */}
+                    <Route path="/institution" element={<Institution />} />
+                    <Route path="/institution/issue" element={<IssueCredential />} />
+                    <Route path="/institution/issued" element={<IssuedCredentials />} />
+                  </Routes>
+                </MainLayout>
+              </Suspense>
+            </Router>
+            <Toaster position="top-right" richColors />
+          </WalletProvider>
+        </PolkadotProvider>
       </QueryClientProvider>
     </ErrorBoundary>
   );

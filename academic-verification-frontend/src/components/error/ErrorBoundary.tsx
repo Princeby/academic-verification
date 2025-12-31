@@ -1,7 +1,8 @@
+// src/components/error/ErrorBoundary.tsx
 import { Component, ErrorInfo, ReactNode } from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { AlertTriangle, RefreshCw } from 'lucide-react';
+import { AlertTriangle, RefreshCw, Home } from 'lucide-react';
 
 interface Props {
   children?: ReactNode;
@@ -32,6 +33,10 @@ export class ErrorBoundary extends Component<Props, State> {
     window.location.href = '/';
   };
 
+  private handleReload = () => {
+    window.location.reload();
+  };
+
   public render() {
     if (this.state.hasError) {
       return (
@@ -43,7 +48,7 @@ export class ErrorBoundary extends Component<Props, State> {
                 <CardTitle>Application Error</CardTitle>
               </div>
               <CardDescription>
-                Something went wrong. Please try refreshing the page.
+                Something went wrong. Please try refreshing the page or returning home.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -67,18 +72,23 @@ export class ErrorBoundary extends Component<Props, State> {
                 </details>
               )}
               
-              <div className="flex space-x-3">
+              <div className="flex flex-col sm:flex-row gap-3">
                 <Button onClick={this.handleReset} className="flex-1">
-                  <RefreshCw className="h-4 w-4 mr-2" />
-                  Reset Application
+                  <Home className="h-4 w-4 mr-2" />
+                  Go to Home
                 </Button>
                 <Button 
                   variant="outline" 
-                  onClick={() => window.location.reload()}
+                  onClick={this.handleReload}
                   className="flex-1"
                 >
+                  <RefreshCw className="h-4 w-4 mr-2" />
                   Reload Page
                 </Button>
+              </div>
+
+              <div className="text-xs text-muted-foreground text-center pt-4 border-t">
+                If this problem persists, please contact support or check the browser console for more details.
               </div>
             </CardContent>
           </Card>
