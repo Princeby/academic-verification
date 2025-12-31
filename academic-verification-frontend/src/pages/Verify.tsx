@@ -1,39 +1,45 @@
 // src/pages/Verify.tsx
-import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
-import { Search } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import VerifyCredential from '@/components/credentials/VerifyCredential';
+import { Shield } from 'lucide-react';
 
 export default function Verify() {
+  const [searchParams] = useSearchParams();
+  const hashParam = searchParams.get('hash');
+
   return (
-    <div className="space-y-6 max-w-2xl mx-auto">
+    <div className="max-w-4xl mx-auto space-y-6">
+      {/* Page Header */}
       <div className="text-center">
-        <h1 className="text-3xl font-bold mb-2">Verify Credential</h1>
-        <p className="text-muted-foreground">
-          Enter a credential hash to verify its authenticity
+        <div className="inline-flex items-center justify-center h-16 w-16 rounded-full bg-primary/10 mb-4">
+          <Shield className="h-8 w-8 text-primary" />
+        </div>
+        <h1 className="text-3xl md:text-4xl font-bold mb-2">
+          Verify Academic Credential
+        </h1>
+        <p className="text-muted-foreground max-w-2xl mx-auto">
+          Instantly verify the authenticity of any academic credential issued on our blockchain.
+          No account required.
         </p>
       </div>
-      
-      <Card>
-        <CardHeader>
-          <CardTitle>Credential Hash</CardTitle>
-          <CardDescription>
-            Paste the credential hash or upload a document
-          </CardDescription>
-        </CardHeader>
-        <div className="p-6 pt-0">
-          <div className="flex space-x-2">
-            <input
-              type="text"
-              placeholder="Enter credential hash (0x...)"
-              className="flex-1 px-3 py-2 border border-border rounded-md bg-background"
-            />
-            <Button>
-              <Search className="h-4 w-4 mr-2" />
-              Verify
-            </Button>
-          </div>
+
+      {/* Verification Component */}
+      <VerifyCredential initialHash={hashParam || undefined} />
+
+      {/* Trust Indicators */}
+      <div className="mt-12 pt-8 border-t border-border">
+        <p className="text-center text-sm text-muted-foreground mb-6">
+          Trusted by institutions and employers worldwide
+        </p>
+        <div className="flex flex-wrap justify-center items-center gap-8 opacity-50">
+          <div className="text-2xl font-bold">MIT</div>
+          <div className="text-2xl font-bold">Stanford</div>
+          <div className="text-2xl font-bold">Harvard</div>
+          <div className="text-2xl font-bold">Oxford</div>
+          <div className="text-2xl font-bold">Cambridge</div>
         </div>
-      </Card>
+      </div>
     </div>
   );
 }

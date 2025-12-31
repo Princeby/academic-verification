@@ -1,15 +1,17 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
-import { PolkadotProvider } from './providers/PolkadotProvider';
-import { WalletProvider } from './providers/WalletProvider';
 import MainLayout from './components/layout/MainLayout';
 import Home from './pages/Home';
 import Dashboard from './pages/Dashboard';
 import Credentials from './pages/Credentials';
 import Institution from './pages/Institution';
+import IssueCredential from './pages/IssueCredential';
 import Verify from './pages/Verify';
 import Institutions from './pages/Institutions';
+import ErrorBoundary from './components/error/ErrorBoundary';
+import { Suspense } from 'react';
+import { Spinner } from './components/ui/Spinner';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -21,27 +23,38 @@ const queryClient = new QueryClient({
   },
 });
 
+// Loading fallback
+const LoadingFallback = () => (
+  <div className="flex items-center justify-center min-h-[60vh]">
+    <div className="text-center">
+      <Spinner size="lg" className="mx-auto mb-4" />
+      <p className="text-muted-foreground">Loading...</p>
+    </div>
+  </div>
+);
+
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <PolkadotProvider>
-        <WalletProvider>
-          <Router>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <Router>
+          <Suspense fallback={<LoadingFallback />}>
             <MainLayout>
               <Routes>
                 <Route path="/" element={<Home />} />
                 <Route path="/dashboard" element={<Dashboard />} />
                 <Route path="/credentials" element={<Credentials />} />
                 <Route path="/institution" element={<Institution />} />
+                <Route path="/institution/issue" element={<IssueCredential />} />
                 <Route path="/verify" element={<Verify />} />
                 <Route path="/institutions" element={<Institutions />} />
               </Routes>
             </MainLayout>
-          </Router>
-          <Toaster position="top-right" richColors />
-        </WalletProvider>
-      </PolkadotProvider>
-    </QueryClientProvider>
+          </Suspense>
+        </Router>
+        <Toaster position="top-right" richColors />
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }
 
