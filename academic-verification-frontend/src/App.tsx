@@ -12,6 +12,7 @@ import Institutions from './pages/Institutions';
 import ErrorBoundary from './components/error/ErrorBoundary';
 import { Suspense } from 'react';
 import { Spinner } from './components/ui/Spinner';
+import Settings from './pages/Settings';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -48,6 +49,7 @@ function App() {
                 <Route path="/institution/issue" element={<IssueCredential />} />
                 <Route path="/verify" element={<Verify />} />
                 <Route path="/institutions" element={<Institutions />} />
+                <Route path="/settings" element={<Settings />} />
               </Routes>
             </MainLayout>
           </Suspense>

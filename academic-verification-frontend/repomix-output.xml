@@ -51,14 +51,20 @@ src/
       index.ts
       WalletConnect.tsx
     credentials/
+      CredentialCard.tsx
+      CredentialDetailModal.tsx
+      CredentialsList.tsx
       index.ts
       IssueCredentialForm.tsx
+      VerifyCredential.tsx
     did/
       CreateDIDForm.tsx
       CreateDIDModal.tsx
       DIDStatus.tsx
       index.ts
       InstitutionRegistration.tsx
+    error/
+      ErrorBoundary.tsx
     layout/
       Footer.tsx
       Header.tsx
@@ -277,6 +283,908 @@ export default function WalletConnect() {
           </div>
         </>
       )}
+    </div>
+  );
+}
+</file>
+
+<file path="src/components/credentials/CredentialCard.tsx">
+// src/components/credentials/CredentialCard.tsx
+import { useState } from 'react';
+import { 
+  Award, 
+  Building2, 
+  Calendar, 
+  FileText, 
+  ExternalLink,
+  Download,
+  Share2,
+  Eye,
+  AlertCircle,
+  CheckCircle2,
+  XCircle
+} from 'lucide-react';
+import { Card, CardHeader, CardContent } from '../ui/Card';
+import { Button } from '../ui/Button';
+import { Badge } from '../ui/Badge';
+import { cn } from '@/lib/utils/cn';
+
+export interface Credential {
+  id: string;
+  holder: string;
+  issuer: string;
+  issuerName?: string;
+  credentialHash: string;
+  credentialType: string;
+  degreeName?: string;
+  fieldOfStudy?: string;
+  issuedAt: number;
+  expiresAt?: number;
+  revoked: boolean;
+  metadata?: string;
+}
+
+interface CredentialCardProps {
+  credential: Credential;
+  onViewDetails?: () => void;
+  onVerify?: () => void;
+  onShare?: () => void;
+  onDownload?: () => void;
+}
+
+export default function CredentialCard({ 
+  credential, 
+  onViewDetails,
+  onVerify,
+  onShare,
+  onDownload 
+}: CredentialCardProps) {
+  const [isHovered, setIsHovered] = useState(false);
+
+  // Determine credential status
+  const getStatus = () => {
+    if (credential.revoked) {
+      return {
+        label: 'Revoked',
+        variant: 'error' as const,
+        icon: XCircle,
+        color: 'text-red-600'
+      };
+    }
+    
+    if (credential.expiresAt && credential.expiresAt < Date.now()) {
+      return {
+        label: 'Expired',
+        variant: 'warning' as const,
+        icon: AlertCircle,
+        color: 'text-yellow-600'
+      };
+    }
+    
+    return {
+      label: 'Active',
+      variant: 'success' as const,
+      icon: CheckCircle2,
+      color: 'text-green-600'
+    };
+  };
+
+  const status = getStatus();
+  const StatusIcon = status.icon;
+
+  // Format dates
+  const formatDate = (timestamp: number) => {
+    return new Date(timestamp).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    });
+  };
+
+  // Get credential type color
+  const getTypeColor = (type: string) => {
+    const colors: Record<string, string> = {
+      "Bachelor's Degree": 'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400',
+      "Master's Degree": 'bg-purple-100 text-purple-800 dark:bg-purple-900/20 dark:text-purple-400',
+      "Doctorate (PhD)": 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/20 dark:text-indigo-400',
+      "Certificate": 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400',
+      "Transcript": 'bg-orange-100 text-orange-800 dark:bg-orange-900/20 dark:text-orange-400',
+      "Professional Certification": 'bg-pink-100 text-pink-800 dark:bg-pink-900/20 dark:text-pink-400',
+    };
+    return colors[type] || 'bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-400';
+  };
+
+  return (
+    <Card 
+      className={cn(
+        "transition-all duration-200 cursor-pointer hover:shadow-lg",
+        credential.revoked && "opacity-60 border-red-200 dark:border-red-900",
+        isHovered && "scale-[1.02]"
+      )}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      {/* Header */}
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between">
+          <div className="flex items-center space-x-3 flex-1 min-w-0">
+            <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+              <Award className="h-6 w-6 text-primary" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center space-x-2 mb-1">
+                <Badge className={getTypeColor(credential.credentialType)}>
+                  {credential.credentialType}
+                </Badge>
+                <Badge variant={status.variant}>
+                  <StatusIcon className="h-3 w-3 mr-1" />
+                  {status.label}
+                </Badge>
+              </div>
+              <h3 className="font-semibold text-lg truncate">
+                {credential.degreeName || 'Academic Credential'}
+              </h3>
+              {credential.fieldOfStudy && (
+                <p className="text-sm text-muted-foreground truncate">
+                  {credential.fieldOfStudy}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      </CardHeader>
+
+      {/* Content */}
+      <CardContent className="space-y-4">
+        {/* Issuer Info */}
+        <div className="flex items-center space-x-2 text-sm">
+          <Building2 className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+          <span className="text-muted-foreground">Issued by:</span>
+          <span className="font-medium truncate">
+            {credential.issuerName || `${credential.issuer.slice(0, 8)}...${credential.issuer.slice(-6)}`}
+          </span>
+        </div>
+
+        {/* Date Info */}
+        <div className="grid grid-cols-2 gap-3 text-sm">
+          <div className="flex items-center space-x-2">
+            <Calendar className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+            <div>
+              <p className="text-xs text-muted-foreground">Issued</p>
+              <p className="font-medium">{formatDate(credential.issuedAt)}</p>
+            </div>
+          </div>
+          {credential.expiresAt && (
+            <div className="flex items-center space-x-2">
+              <Calendar className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+              <div>
+                <p className="text-xs text-muted-foreground">Expires</p>
+                <p className="font-medium">{formatDate(credential.expiresAt)}</p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Credential Hash Preview */}
+        <div className="flex items-center space-x-2 text-xs">
+          <FileText className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+          <span className="text-muted-foreground">Hash:</span>
+          <code className="font-mono text-xs bg-muted px-2 py-0.5 rounded truncate">
+            {credential.credentialHash.slice(0, 12)}...{credential.credentialHash.slice(-8)}
+          </code>
+        </div>
+
+        {/* Revoked Message */}
+        {credential.revoked && (
+          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3">
+            <div className="flex items-start space-x-2">
+              <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-500 flex-shrink-0 mt-0.5" />
+              <div className="text-xs">
+                <p className="font-semibold text-red-800 dark:text-red-400">Credential Revoked</p>
+                <p className="text-red-700 dark:text-red-300 mt-1">
+                  This credential has been revoked and is no longer valid.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Actions */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-3 border-t border-border">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onViewDetails}
+            className="text-xs"
+          >
+            <Eye className="h-3 w-3 mr-1" />
+            View
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onVerify}
+            className="text-xs"
+          >
+            <CheckCircle2 className="h-3 w-3 mr-1" />
+            Verify
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onShare}
+            className="text-xs"
+          >
+            <Share2 className="h-3 w-3 mr-1" />
+            Share
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onDownload}
+            className="text-xs"
+          >
+            <Download className="h-3 w-3 mr-1" />
+            Export
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+</file>
+
+<file path="src/components/credentials/CredentialDetailModal.tsx">
+// src/components/credentials/CredentialDetailModal.tsx
+import { 
+    X, 
+    Award, 
+    Building2, 
+    User, 
+    Calendar, 
+    FileText, 
+    Hash, 
+    ExternalLink,
+    Copy,
+    Download,
+    Share2,
+    CheckCircle2,
+    AlertCircle,
+    QrCode
+  } from 'lucide-react';
+  import { Modal } from '../ui/Modal';
+  import { Button } from '../ui/Button';
+  import { Badge } from '../ui/Badge';
+  import { toast } from 'sonner';
+  import type { Credential } from './CredentialCard';
+  
+  interface CredentialDetailModalProps {
+    isOpen: boolean;
+    onClose: () => void;
+    credential: Credential | null;
+  }
+  
+  export default function CredentialDetailModal({ 
+    isOpen, 
+    onClose, 
+    credential 
+  }: CredentialDetailModalProps) {
+    if (!credential) return null;
+  
+    const formatDate = (timestamp: number) => {
+      return new Date(timestamp).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    };
+  
+    const copyToClipboard = (text: string, label: string) => {
+      navigator.clipboard.writeText(text);
+      toast.success(`${label} copied to clipboard`);
+    };
+  
+    const handleShare = () => {
+      const shareUrl = `${window.location.origin}/verify?hash=${credential.credentialHash}`;
+      copyToClipboard(shareUrl, 'Share link');
+    };
+  
+    const handleDownload = () => {
+      const data = {
+        id: credential.id,
+        type: credential.credentialType,
+        degreeName: credential.degreeName,
+        fieldOfStudy: credential.fieldOfStudy,
+        holder: credential.holder,
+        issuer: credential.issuer,
+        issuerName: credential.issuerName,
+        credentialHash: credential.credentialHash,
+        issuedAt: credential.issuedAt,
+        expiresAt: credential.expiresAt,
+        revoked: credential.revoked,
+        metadata: credential.metadata,
+        verificationUrl: `${window.location.origin}/verify?hash=${credential.credentialHash}`,
+      };
+  
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `credential-${credential.id}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      toast.success('Credential exported');
+    };
+  
+    const getStatus = () => {
+      if (credential.revoked) {
+        return { label: 'Revoked', variant: 'error' as const, icon: AlertCircle };
+      }
+      if (credential.expiresAt && credential.expiresAt < Date.now()) {
+        return { label: 'Expired', variant: 'warning' as const, icon: AlertCircle };
+      }
+      return { label: 'Active', variant: 'success' as const, icon: CheckCircle2 };
+    };
+  
+    const status = getStatus();
+    const StatusIcon = status.icon;
+  
+    return (
+      <Modal isOpen={isOpen} onClose={onClose} className="max-w-3xl">
+        <div className="relative">
+          {/* Header */}
+          <div className="flex items-start justify-between p-6 border-b border-border">
+            <div className="flex items-center space-x-4 flex-1">
+              <div className="h-16 w-16 rounded-xl bg-gradient-to-br from-primary to-purple-600 flex items-center justify-center">
+                <Award className="h-8 w-8 text-white" />
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center space-x-2 mb-2">
+                  <h2 className="text-2xl font-bold">
+                    {credential.degreeName || 'Academic Credential'}
+                  </h2>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Badge variant={status.variant}>
+                    <StatusIcon className="h-3 w-3 mr-1" />
+                    {status.label}
+                  </Badge>
+                  <Badge variant="outline">{credential.credentialType}</Badge>
+                </div>
+              </div>
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onClose}
+              className="rounded-full"
+            >
+              <X className="h-5 w-5" />
+            </Button>
+          </div>
+  
+          {/* Content */}
+          <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
+            {/* Credential Details */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Left Column */}
+              <div className="space-y-4">
+                {/* Field of Study */}
+                {credential.fieldOfStudy && (
+                  <div>
+                    <label className="text-sm font-semibold text-muted-foreground">
+                      Field of Study
+                    </label>
+                    <p className="text-base font-medium mt-1">{credential.fieldOfStudy}</p>
+                  </div>
+                )}
+  
+                {/* Holder */}
+                <div>
+                  <label className="text-sm font-semibold text-muted-foreground flex items-center">
+                    <User className="h-3 w-3 mr-1" />
+                    Credential Holder
+                  </label>
+                  <div className="flex items-center space-x-2 mt-1">
+                    <code className="text-xs font-mono bg-muted px-2 py-1 rounded flex-1 truncate">
+                      {credential.holder}
+                    </code>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      onClick={() => copyToClipboard(credential.holder, 'Holder address')}
+                    >
+                      <Copy className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </div>
+  
+                {/* Issuer */}
+                <div>
+                  <label className="text-sm font-semibold text-muted-foreground flex items-center">
+                    <Building2 className="h-3 w-3 mr-1" />
+                    Issued By
+                  </label>
+                  <p className="text-base font-medium mt-1">
+                    {credential.issuerName || 'Unknown Institution'}
+                  </p>
+                  <div className="flex items-center space-x-2 mt-1">
+                    <code className="text-xs font-mono bg-muted px-2 py-1 rounded flex-1 truncate">
+                      {credential.issuer}
+                    </code>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      onClick={() => copyToClipboard(credential.issuer, 'Issuer address')}
+                    >
+                      <Copy className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+  
+              {/* Right Column */}
+              <div className="space-y-4">
+                {/* Issue Date */}
+                <div>
+                  <label className="text-sm font-semibold text-muted-foreground flex items-center">
+                    <Calendar className="h-3 w-3 mr-1" />
+                    Issue Date
+                  </label>
+                  <p className="text-base font-medium mt-1">{formatDate(credential.issuedAt)}</p>
+                </div>
+  
+                {/* Expiration Date */}
+                {credential.expiresAt && (
+                  <div>
+                    <label className="text-sm font-semibold text-muted-foreground flex items-center">
+                      <Calendar className="h-3 w-3 mr-1" />
+                      Expiration Date
+                    </label>
+                    <p className="text-base font-medium mt-1">{formatDate(credential.expiresAt)}</p>
+                  </div>
+                )}
+  
+                {/* Credential ID */}
+                <div>
+                  <label className="text-sm font-semibold text-muted-foreground flex items-center">
+                    <FileText className="h-3 w-3 mr-1" />
+                    Credential ID
+                  </label>
+                  <div className="flex items-center space-x-2 mt-1">
+                    <code className="text-xs font-mono bg-muted px-2 py-1 rounded flex-1 truncate">
+                      {credential.id}
+                    </code>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      onClick={() => copyToClipboard(credential.id, 'Credential ID')}
+                    >
+                      <Copy className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+  
+            {/* Credential Hash */}
+            <div className="bg-accent rounded-lg p-4">
+              <label className="text-sm font-semibold text-muted-foreground flex items-center mb-2">
+                <Hash className="h-4 w-4 mr-1" />
+                Credential Hash (Blake2)
+              </label>
+              <div className="flex items-center space-x-2">
+                <code className="text-xs font-mono bg-background px-3 py-2 rounded flex-1 break-all">
+                  {credential.credentialHash}
+                </code>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => copyToClipboard(credential.credentialHash, 'Credential hash')}
+                >
+                  <Copy className="h-3 w-3 mr-1" />
+                  Copy
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">
+                This cryptographic hash uniquely identifies your credential on the blockchain
+              </p>
+            </div>
+  
+            {/* Metadata */}
+            {credential.metadata && (
+              <div>
+                <label className="text-sm font-semibold text-muted-foreground mb-2 block">
+                  Additional Information
+                </label>
+                <div className="bg-muted rounded-lg p-4">
+                  <p className="text-sm whitespace-pre-wrap">{credential.metadata}</p>
+                </div>
+              </div>
+            )}
+  
+            {/* Revoked Warning */}
+            {credential.revoked && (
+              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+                <div className="flex items-start space-x-3">
+                  <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-500 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-semibold text-red-800 dark:text-red-400">
+                      Credential Revoked
+                    </p>
+                    <p className="text-sm text-red-700 dark:text-red-300 mt-1">
+                      This credential has been revoked by the issuing institution and is no longer valid.
+                      It should not be used for verification purposes.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+  
+            {/* Verification Info */}
+            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+              <div className="flex items-start space-x-3">
+                <CheckCircle2 className="h-5 w-5 text-blue-600 dark:text-blue-500 flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="font-semibold text-blue-800 dark:text-blue-400">
+                    Blockchain Verified
+                  </p>
+                  <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
+                    This credential is permanently recorded on the blockchain and can be verified by anyone.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+  
+          {/* Footer Actions */}
+          <div className="flex flex-wrap gap-3 p-6 border-t border-border bg-accent/50">
+            <Button onClick={handleShare} className="flex-1">
+              <Share2 className="h-4 w-4 mr-2" />
+              Share Credential
+            </Button>
+            <Button onClick={handleDownload} variant="outline" className="flex-1">
+              <Download className="h-4 w-4 mr-2" />
+              Export JSON
+            </Button>
+            <Button 
+              variant="outline"
+              onClick={() => window.open(`/verify?hash=${credential.credentialHash}`, '_blank')}
+            >
+              <ExternalLink className="h-4 w-4 mr-2" />
+              Public Verification
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    );
+  }
+</file>
+
+<file path="src/components/credentials/CredentialsList.tsx">
+// src/components/credentials/CredentialsList.tsx
+import { useState, useMemo } from 'react';
+import { 
+  Grid3x3, 
+  List, 
+  Search, 
+  Filter,
+  SortAsc,
+  Award,
+  Loader2
+} from 'lucide-react';
+import { Button } from '../ui/Button';
+import { Input } from '../ui/Input';
+import { Badge } from '../ui/Badge';
+import CredentialCard, { Credential } from './CredentialCard';
+import CredentialDetailModal from './CredentialDetailModal';
+import { CREDENTIAL_TYPES, CREDENTIAL_STATUS } from '@/lib/utils/constants';
+
+interface CredentialsListProps {
+  credentials: Credential[];
+  loading?: boolean;
+  emptyMessage?: string;
+}
+
+type ViewMode = 'grid' | 'list';
+type FilterStatus = 'all' | 'active' | 'revoked' | 'expired';
+type SortOption = 'newest' | 'oldest' | 'name' | 'type';
+
+export default function CredentialsList({ 
+  credentials, 
+  loading = false,
+  emptyMessage = "No credentials yet"
+}: CredentialsListProps) {
+  const [viewMode, setViewMode] = useState<ViewMode>('grid');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterStatus, setFilterStatus] = useState<FilterStatus>('all');
+  const [filterType, setFilterType] = useState<string>('all');
+  const [sortBy, setSortBy] = useState<SortOption>('newest');
+  const [selectedCredential, setSelectedCredential] = useState<Credential | null>(null);
+  const [showDetailModal, setShowDetailModal] = useState(false);
+
+  // Filter and sort credentials
+  const filteredCredentials = useMemo(() => {
+    let result = [...credentials];
+
+    // Search filter
+    if (searchQuery) {
+      result = result.filter(cred => 
+        cred.degreeName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        cred.fieldOfStudy?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        cred.issuerName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        cred.credentialType.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+    }
+
+    // Status filter
+    if (filterStatus !== 'all') {
+      result = result.filter(cred => {
+        if (filterStatus === 'active') {
+          return !cred.revoked && (!cred.expiresAt || cred.expiresAt > Date.now());
+        }
+        if (filterStatus === 'revoked') {
+          return cred.revoked;
+        }
+        if (filterStatus === 'expired') {
+          return !cred.revoked && cred.expiresAt && cred.expiresAt < Date.now();
+        }
+        return true;
+      });
+    }
+
+    // Type filter
+    if (filterType !== 'all') {
+      result = result.filter(cred => cred.credentialType === filterType);
+    }
+
+    // Sort
+    result.sort((a, b) => {
+      switch (sortBy) {
+        case 'newest':
+          return b.issuedAt - a.issuedAt;
+        case 'oldest':
+          return a.issuedAt - b.issuedAt;
+        case 'name':
+          return (a.degreeName || '').localeCompare(b.degreeName || '');
+        case 'type':
+          return a.credentialType.localeCompare(b.credentialType);
+        default:
+          return 0;
+      }
+    });
+
+    return result;
+  }, [credentials, searchQuery, filterStatus, filterType, sortBy]);
+
+  // Get credential counts by status
+  const counts = useMemo(() => {
+    return {
+      total: credentials.length,
+      active: credentials.filter(c => !c.revoked && (!c.expiresAt || c.expiresAt > Date.now())).length,
+      revoked: credentials.filter(c => c.revoked).length,
+      expired: credentials.filter(c => !c.revoked && c.expiresAt && c.expiresAt < Date.now()).length,
+    };
+  }, [credentials]);
+
+  // Handle credential actions
+  const handleViewDetails = (credential: Credential) => {
+    setSelectedCredential(credential);
+    setShowDetailModal(true);
+  };
+
+  const handleVerify = (credential: Credential) => {
+    window.open(`/verify?hash=${credential.credentialHash}`, '_blank');
+  };
+
+  const handleShare = (credential: Credential) => {
+    const shareUrl = `${window.location.origin}/verify?hash=${credential.credentialHash}`;
+    navigator.clipboard.writeText(shareUrl);
+    // Would show toast in real implementation
+    alert('Share link copied to clipboard!');
+  };
+
+  const handleDownload = (credential: Credential) => {
+    const data = {
+      id: credential.id,
+      type: credential.credentialType,
+      degreeName: credential.degreeName,
+      fieldOfStudy: credential.fieldOfStudy,
+      holder: credential.holder,
+      issuer: credential.issuer,
+      credentialHash: credential.credentialHash,
+      issuedAt: credential.issuedAt,
+    };
+
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `credential-${credential.id}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-3 text-primary" />
+          <p className="text-muted-foreground">Loading credentials...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Stats Bar */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="bg-accent rounded-lg p-4">
+          <p className="text-sm text-muted-foreground">Total</p>
+          <p className="text-2xl font-bold">{counts.total}</p>
+        </div>
+        <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-4">
+          <p className="text-sm text-green-700 dark:text-green-400">Active</p>
+          <p className="text-2xl font-bold text-green-800 dark:text-green-300">{counts.active}</p>
+        </div>
+        <div className="bg-red-50 dark:bg-red-900/20 rounded-lg p-4">
+          <p className="text-sm text-red-700 dark:text-red-400">Revoked</p>
+          <p className="text-2xl font-bold text-red-800 dark:text-red-300">{counts.revoked}</p>
+        </div>
+        <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-lg p-4">
+          <p className="text-sm text-yellow-700 dark:text-yellow-400">Expired</p>
+          <p className="text-2xl font-bold text-yellow-800 dark:text-yellow-300">{counts.expired}</p>
+        </div>
+      </div>
+
+      {/* Filters & Controls */}
+      <div className="flex flex-col sm:flex-row gap-4">
+        {/* Search */}
+        <div className="flex-1">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search credentials..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10"
+            />
+          </div>
+        </div>
+
+        {/* View Mode Toggle */}
+        <div className="flex gap-2">
+          <Button
+            variant={viewMode === 'grid' ? 'default' : 'outline'}
+            size="icon"
+            onClick={() => setViewMode('grid')}
+          >
+            <Grid3x3 className="h-4 w-4" />
+          </Button>
+          <Button
+            variant={viewMode === 'list' ? 'default' : 'outline'}
+            size="icon"
+            onClick={() => setViewMode('list')}
+          >
+            <List className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      {/* Filter Tabs */}
+      <div className="flex flex-wrap gap-2">
+        <Button
+          variant={filterStatus === 'all' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setFilterStatus('all')}
+        >
+          All ({counts.total})
+        </Button>
+        <Button
+          variant={filterStatus === 'active' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setFilterStatus('active')}
+        >
+          Active ({counts.active})
+        </Button>
+        <Button
+          variant={filterStatus === 'revoked' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setFilterStatus('revoked')}
+        >
+          Revoked ({counts.revoked})
+        </Button>
+        <Button
+          variant={filterStatus === 'expired' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setFilterStatus('expired')}
+        >
+          Expired ({counts.expired})
+        </Button>
+
+        <div className="ml-auto flex gap-2">
+          {/* Type Filter */}
+          <select
+            value={filterType}
+            onChange={(e) => setFilterType(e.target.value)}
+            className="px-3 py-1.5 text-sm border border-input rounded-md bg-background"
+          >
+            <option value="all">All Types</option>
+            {CREDENTIAL_TYPES.map(type => (
+              <option key={type} value={type}>{type}</option>
+            ))}
+          </select>
+
+          {/* Sort */}
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as SortOption)}
+            className="px-3 py-1.5 text-sm border border-input rounded-md bg-background"
+          >
+            <option value="newest">Newest First</option>
+            <option value="oldest">Oldest First</option>
+            <option value="name">By Name</option>
+            <option value="type">By Type</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Results Count */}
+      <div className="text-sm text-muted-foreground">
+        Showing {filteredCredentials.length} of {credentials.length} credential{credentials.length !== 1 ? 's' : ''}
+      </div>
+
+      {/* Credentials Grid/List */}
+      {filteredCredentials.length === 0 ? (
+        <div className="text-center py-12">
+          <Award className="h-12 w-12 mx-auto mb-3 text-muted-foreground opacity-50" />
+          <p className="text-lg font-medium mb-1">
+            {searchQuery || filterStatus !== 'all' || filterType !== 'all' 
+              ? 'No credentials match your filters'
+              : emptyMessage
+            }
+          </p>
+          <p className="text-sm text-muted-foreground">
+            {searchQuery || filterStatus !== 'all' || filterType !== 'all'
+              ? 'Try adjusting your search or filters'
+              : 'Credentials you receive will appear here'
+            }
+          </p>
+        </div>
+      ) : (
+        <div className={
+          viewMode === 'grid'
+            ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6'
+            : 'flex flex-col gap-4'
+        }>
+          {filteredCredentials.map((credential) => (
+            <CredentialCard
+              key={credential.id}
+              credential={credential}
+              onViewDetails={() => handleViewDetails(credential)}
+              onVerify={() => handleVerify(credential)}
+              onShare={() => handleShare(credential)}
+              onDownload={() => handleDownload(credential)}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Detail Modal */}
+      <CredentialDetailModal
+        isOpen={showDetailModal}
+        onClose={() => setShowDetailModal(false)}
+        credential={selectedCredential}
+      />
     </div>
   );
 }
@@ -1104,6 +2012,610 @@ export default function IssueCredentialForm({ onSuccess, onCancel }: IssueCreden
         </form>
       </CardContent>
     </Card>
+  );
+}
+</file>
+
+<file path="src/components/credentials/VerifyCredential.tsx">
+// src/components/credentials/VerifyCredential.tsx
+import { useState, useEffect } from 'react';
+import { 
+  Search, 
+  Upload, 
+  QrCode, 
+  CheckCircle2, 
+  XCircle, 
+  AlertCircle,
+  Loader2,
+  FileText,
+  Hash,
+  Building2,
+  Calendar,
+  User,
+  ExternalLink,
+  Download,
+  Shield,
+  Award
+} from 'lucide-react';
+import { Button } from '../ui/Button';
+import { Input } from '../ui/Input';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../ui/Card';
+import { Badge } from '../ui/Badge';
+import { toast } from 'sonner';
+
+interface VerificationResult {
+  found: boolean;
+  credential?: {
+    id: string;
+    holder: string;
+    issuer: string;
+    issuerName?: string;
+    credentialHash: string;
+    credentialType: string;
+    degreeName?: string;
+    fieldOfStudy?: string;
+    issuedAt: number;
+    expiresAt?: number;
+    revoked: boolean;
+    metadata?: string;
+  };
+  blockNumber?: number;
+  timestamp?: number;
+}
+
+type VerificationMethod = 'hash' | 'file' | 'qr';
+
+interface VerifyCredentialProps {
+  initialHash?: string;
+}
+
+export default function VerifyCredential({ initialHash }: VerifyCredentialProps = {}) {
+  const [method, setMethod] = useState<VerificationMethod>('hash');
+  const [hashInput, setHashInput] = useState(initialHash || '');
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [verificationResult, setVerificationResult] = useState<VerificationResult | null>(null);
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+
+  // Auto-verify if initial hash is provided
+  useEffect(() => {
+    if (initialHash && initialHash.length > 10) {
+      verifyByHash(initialHash);
+    }
+  }, [initialHash]);
+
+  // Verify credential by hash
+  const verifyByHash = async (hash: string) => {
+    if (!hash || hash.length < 10) {
+      toast.error('Please enter a valid credential hash');
+      return;
+    }
+
+    setIsVerifying(true);
+    setVerificationResult(null);
+
+    try {
+      // TODO: Replace with actual blockchain query
+      await new Promise(resolve => setTimeout(resolve, 1500));
+
+      // Mock verification result
+      const mockResult: VerificationResult = {
+        found: true,
+        credential: {
+          id: 'cred_' + Math.random().toString(36).substr(2, 9),
+          holder: '5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY',
+          issuer: '5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty',
+          issuerName: 'Massachusetts Institute of Technology',
+          credentialHash: hash,
+          credentialType: "Bachelor's Degree",
+          degreeName: 'Bachelor of Science in Computer Science',
+          fieldOfStudy: 'Computer Science',
+          issuedAt: Date.now() - 365 * 24 * 60 * 60 * 1000,
+          revoked: false,
+          metadata: 'Graduated with honors. GPA: 3.85',
+        },
+        blockNumber: 12345678,
+        timestamp: Date.now() - 365 * 24 * 60 * 60 * 1000,
+      };
+
+      setVerificationResult(mockResult);
+      toast.success('Credential verified successfully');
+    } catch (error) {
+      console.error('Verification failed:', error);
+      setVerificationResult({ found: false });
+      toast.error('Verification failed');
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
+  // Handle file upload
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.includes('json') && !file.type.includes('pdf')) {
+      toast.error('Please upload a JSON or PDF file');
+      return;
+    }
+
+    setUploadedFile(file);
+
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      
+      if (data.credentialHash) {
+        setHashInput(data.credentialHash);
+        await verifyByHash(data.credentialHash);
+      } else {
+        toast.error('No credential hash found in file');
+      }
+    } catch (error) {
+      toast.error('Failed to read file');
+    }
+  };
+
+  // Handle form submit
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    verifyByHash(hashInput);
+  };
+
+  // Format date
+  const formatDate = (timestamp: number) => {
+    return new Date(timestamp).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+  };
+
+  // Get verification status
+  const getVerificationStatus = () => {
+    if (!verificationResult) return null;
+
+    if (!verificationResult.found) {
+      return {
+        icon: XCircle,
+        title: 'Credential Not Found',
+        description: 'This credential does not exist in the blockchain',
+        color: 'text-red-600',
+        bgColor: 'bg-red-50 dark:bg-red-900/20',
+        borderColor: 'border-red-200 dark:border-red-800',
+      };
+    }
+
+    const cred = verificationResult.credential!;
+
+    if (cred.revoked) {
+      return {
+        icon: AlertCircle,
+        title: 'Credential Revoked',
+        description: 'This credential has been revoked and is no longer valid',
+        color: 'text-orange-600',
+        bgColor: 'bg-orange-50 dark:bg-orange-900/20',
+        borderColor: 'border-orange-200 dark:border-orange-800',
+      };
+    }
+
+    if (cred.expiresAt && cred.expiresAt < Date.now()) {
+      return {
+        icon: AlertCircle,
+        title: 'Credential Expired',
+        description: 'This credential has expired',
+        color: 'text-yellow-600',
+        bgColor: 'bg-yellow-50 dark:bg-yellow-900/20',
+        borderColor: 'border-yellow-200 dark:border-yellow-800',
+      };
+    }
+
+    return {
+      icon: CheckCircle2,
+      title: 'Valid Credential',
+      description: 'This credential is authentic and active',
+      color: 'text-green-600',
+      bgColor: 'bg-green-50 dark:bg-green-900/20',
+      borderColor: 'border-green-200 dark:border-green-800',
+    };
+  };
+
+  const status = getVerificationStatus();
+
+  return (
+    <div className="space-y-8">
+      {/* Verification Methods */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center">
+            <Shield className="h-6 w-6 mr-2 text-primary" />
+            Verify Academic Credential
+          </CardTitle>
+          <CardDescription>
+            Enter a credential hash, upload a credential file, or scan a QR code to verify authenticity
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {/* Method Tabs */}
+          <div className="flex space-x-2 border-b border-border">
+            <button
+              onClick={() => setMethod('hash')}
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                method === 'hash'
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <Hash className="inline h-4 w-4 mr-1" />
+              Hash Input
+            </button>
+            <button
+              onClick={() => setMethod('file')}
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                method === 'file'
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <Upload className="inline h-4 w-4 mr-1" />
+              File Upload
+            </button>
+            <button
+              onClick={() => setMethod('qr')}
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                method === 'qr'
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <QrCode className="inline h-4 w-4 mr-1" />
+              QR Code
+            </button>
+          </div>
+
+          {/* Hash Input Method */}
+          {method === 'hash' && (
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold mb-2">
+                  Credential Hash
+                </label>
+                <div className="flex space-x-2">
+                  <Input
+                    type="text"
+                    placeholder="Enter credential hash (0x...)"
+                    value={hashInput}
+                    onChange={(e) => setHashInput(e.target.value)}
+                    className="flex-1 font-mono text-sm"
+                  />
+                  <Button
+                    type="submit"
+                    disabled={isVerifying || !hashInput}
+                  >
+                    {isVerifying ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Verifying...
+                      </>
+                    ) : (
+                      <>
+                        <Search className="h-4 w-4 mr-2" />
+                        Verify
+                      </>
+                    )}
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground mt-2">
+                  The credential hash is a unique identifier stored on the blockchain
+                </p>
+              </div>
+            </form>
+          )}
+
+          {/* File Upload Method */}
+          {method === 'file' && (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold mb-2">
+                  Upload Credential File
+                </label>
+                <div className="border-2 border-dashed border-border rounded-lg p-8 text-center hover:border-primary transition-colors">
+                  <input
+                    type="file"
+                    accept=".json,.pdf"
+                    onChange={handleFileUpload}
+                    className="hidden"
+                    id="credential-file-upload"
+                  />
+                  <label htmlFor="credential-file-upload" className="cursor-pointer">
+                    <Upload className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                    <p className="text-sm font-medium mb-1">
+                      Click to upload or drag and drop
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      JSON or PDF files only
+                    </p>
+                  </label>
+                </div>
+                {uploadedFile && (
+                  <div className="flex items-center space-x-2 mt-3 text-sm">
+                    <FileText className="h-4 w-4 text-primary" />
+                    <span>{uploadedFile.name}</span>
+                    <button
+                      onClick={() => setUploadedFile(null)}
+                      className="text-red-600 hover:underline ml-auto"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* QR Code Method */}
+          {method === 'qr' && (
+            <div className="space-y-4">
+              <div className="border-2 border-dashed border-border rounded-lg p-8 text-center">
+                <QrCode className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
+                <p className="text-sm font-medium mb-2">
+                  QR Code Scanner
+                </p>
+                <p className="text-xs text-muted-foreground mb-4">
+                  Scan a credential QR code to verify
+                </p>
+                <Button variant="outline" disabled>
+                  <QrCode className="h-4 w-4 mr-2" />
+                  Open Camera (Coming Soon)
+                </Button>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Verification Result */}
+      {verificationResult && status && (
+        <Card className={`${status.borderColor} border-2`}>
+          <CardContent className="pt-6">
+            <div className={`${status.bgColor} rounded-lg p-6 space-y-6`}>
+              {/* Status Header */}
+              <div className="flex items-center space-x-4">
+                <div className={`h-16 w-16 rounded-full ${status.bgColor} flex items-center justify-center`}>
+                  <status.icon className={`h-8 w-8 ${status.color}`} />
+                </div>
+                <div className="flex-1">
+                  <h3 className={`text-2xl font-bold ${status.color}`}>
+                    {status.title}
+                  </h3>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {status.description}
+                  </p>
+                </div>
+              </div>
+
+              {/* Credential Details (if found) */}
+              {verificationResult.found && verificationResult.credential && (
+                <div className="space-y-6 pt-6 border-t border-border">
+                  {/* Main Info */}
+                  <div className="bg-background rounded-lg p-6 space-y-4">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-2 mb-3">
+                          <Badge variant="outline" className="text-sm">
+                            {verificationResult.credential.credentialType}
+                          </Badge>
+                          {verificationResult.credential.revoked ? (
+                            <Badge variant="error">Revoked</Badge>
+                          ) : verificationResult.credential.expiresAt && verificationResult.credential.expiresAt < Date.now() ? (
+                            <Badge variant="warning">Expired</Badge>
+                          ) : (
+                            <Badge variant="success">Active</Badge>
+                          )}
+                        </div>
+                        <h4 className="text-xl font-bold mb-2">
+                          {verificationResult.credential.degreeName || 'Academic Credential'}
+                        </h4>
+                        {verificationResult.credential.fieldOfStudy && (
+                          <p className="text-muted-foreground">
+                            {verificationResult.credential.fieldOfStudy}
+                          </p>
+                        )}
+                      </div>
+                      <Award className="h-12 w-12 text-primary opacity-20" />
+                    </div>
+
+                    {/* Details Grid */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t">
+                      {/* Issuer */}
+                      <div>
+                        <label className="text-sm font-semibold text-muted-foreground flex items-center mb-2">
+                          <Building2 className="h-3 w-3 mr-1" />
+                          Issued By
+                        </label>
+                        <p className="font-medium">
+                          {verificationResult.credential.issuerName || 'Unknown Institution'}
+                        </p>
+                        <code className="text-xs font-mono text-muted-foreground block mt-1 truncate">
+                          {verificationResult.credential.issuer}
+                        </code>
+                      </div>
+
+                      {/* Holder */}
+                      <div>
+                        <label className="text-sm font-semibold text-muted-foreground flex items-center mb-2">
+                          <User className="h-3 w-3 mr-1" />
+                          Credential Holder
+                        </label>
+                        <code className="text-xs font-mono block truncate">
+                          {verificationResult.credential.holder}
+                        </code>
+                      </div>
+
+                      {/* Issue Date */}
+                      <div>
+                        <label className="text-sm font-semibold text-muted-foreground flex items-center mb-2">
+                          <Calendar className="h-3 w-3 mr-1" />
+                          Issue Date
+                        </label>
+                        <p className="font-medium">
+                          {formatDate(verificationResult.credential.issuedAt)}
+                        </p>
+                      </div>
+
+                      {/* Expiration Date */}
+                      {verificationResult.credential.expiresAt && (
+                        <div>
+                          <label className="text-sm font-semibold text-muted-foreground flex items-center mb-2">
+                            <Calendar className="h-3 w-3 mr-1" />
+                            Expiration Date
+                          </label>
+                          <p className="font-medium">
+                            {formatDate(verificationResult.credential.expiresAt)}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Metadata */}
+                    {verificationResult.credential.metadata && (
+                      <div className="pt-4 border-t">
+                        <label className="text-sm font-semibold text-muted-foreground mb-2 block">
+                          Additional Information
+                        </label>
+                        <p className="text-sm">{verificationResult.credential.metadata}</p>
+                      </div>
+                    )}
+
+                    {/* Credential Hash */}
+                    <div className="pt-4 border-t">
+                      <label className="text-sm font-semibold text-muted-foreground flex items-center mb-2">
+                        <Hash className="h-3 w-3 mr-1" />
+                        Credential Hash
+                      </label>
+                      <code className="text-xs font-mono bg-muted px-3 py-2 rounded block break-all">
+                        {verificationResult.credential.credentialHash}
+                      </code>
+                    </div>
+                  </div>
+
+                  {/* Blockchain Info */}
+                  <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                    <div className="flex items-start space-x-3">
+                      <Shield className="h-5 w-5 text-blue-600 dark:text-blue-500 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-semibold text-blue-800 dark:text-blue-400">
+                          Blockchain Verified
+                        </p>
+                        <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
+                          This credential is permanently recorded on the blockchain.
+                          {verificationResult.blockNumber && (
+                            <> Verified at block #{verificationResult.blockNumber.toLocaleString()}</>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex flex-wrap gap-3">
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        const data = JSON.stringify(verificationResult.credential, null, 2);
+                        const blob = new Blob([data], { type: 'application/json' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = 'verification-report.json';
+                        a.click();
+                        URL.revokeObjectURL(url);
+                      }}
+                    >
+                      <Download className="h-4 w-4 mr-2" />
+                      Download Report
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        window.print();
+                      }}
+                    >
+                      <FileText className="h-4 w-4 mr-2" />
+                      Print
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Not Found Message */}
+              {!verificationResult.found && (
+                <div className="space-y-4">
+                  <div className="text-center py-6">
+                    <p className="text-muted-foreground">
+                      No credential found with this hash. Possible reasons:
+                    </p>
+                    <ul className="text-sm text-muted-foreground mt-4 space-y-2 text-left max-w-md mx-auto">
+                      <li className="flex items-start">
+                        <span className="mr-2">•</span>
+                        <span>The credential has not been issued yet</span>
+                      </li>
+                      <li className="flex items-start">
+                        <span className="mr-2">•</span>
+                        <span>The hash is incorrect or incomplete</span>
+                      </li>
+                      <li className="flex items-start">
+                        <span className="mr-2">•</span>
+                        <span>The credential was issued on a different network</span>
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Info Section */}
+      {!verificationResult && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">How Verification Works</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div>
+                <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center mb-3">
+                  <Shield className="h-6 w-6 text-primary" />
+                </div>
+                <h4 className="font-semibold mb-2">Blockchain Security</h4>
+                <p className="text-sm text-muted-foreground">
+                  All credentials are cryptographically secured and stored on the blockchain, making them tamper-proof.
+                </p>
+              </div>
+              <div>
+                <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center mb-3">
+                  <CheckCircle2 className="h-6 w-6 text-primary" />
+                </div>
+                <h4 className="font-semibold mb-2">Instant Verification</h4>
+                <p className="text-sm text-muted-foreground">
+                  Verify any credential in seconds without needing to contact the issuing institution.
+                </p>
+              </div>
+              <div>
+                <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center mb-3">
+                  <ExternalLink className="h-6 w-6 text-primary" />
+                </div>
+                <h4 className="font-semibold mb-2">Public Access</h4>
+                <p className="text-sm text-muted-foreground">
+                  Anyone can verify credentials without creating an account or connecting a wallet.
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
   );
 }
 </file>
@@ -2250,6 +3762,102 @@ export default function InstitutionRegistration({ onSuccess, onCancel }: Institu
 }
 </file>
 
+<file path="src/components/error/ErrorBoundary.tsx">
+import { Component, ErrorInfo, ReactNode } from 'react';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { AlertTriangle, RefreshCw } from 'lucide-react';
+
+interface Props {
+  children?: ReactNode;
+}
+
+interface State {
+  hasError: boolean;
+  error?: Error;
+  errorInfo?: ErrorInfo;
+}
+
+export class ErrorBoundary extends Component<Props, State> {
+  public state: State = {
+    hasError: false
+  };
+
+  public static getDerivedStateFromError(error: Error): State {
+    return { hasError: true, error };
+  }
+
+  public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error('Uncaught error:', error, errorInfo);
+    this.setState({ error, errorInfo });
+  }
+
+  private handleReset = () => {
+    this.setState({ hasError: false, error: undefined, errorInfo: undefined });
+    window.location.href = '/';
+  };
+
+  public render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-background p-4">
+          <Card className="max-w-2xl w-full">
+            <CardHeader>
+              <div className="flex items-center space-x-2 text-destructive mb-2">
+                <AlertTriangle className="h-6 w-6" />
+                <CardTitle>Application Error</CardTitle>
+              </div>
+              <CardDescription>
+                Something went wrong. Please try refreshing the page.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {this.state.error && (
+                <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-4">
+                  <p className="font-semibold text-sm mb-2">Error Message:</p>
+                  <pre className="text-xs overflow-x-auto bg-background p-2 rounded">
+                    {this.state.error.message}
+                  </pre>
+                </div>
+              )}
+              
+              {this.state.errorInfo && (
+                <details className="text-sm">
+                  <summary className="cursor-pointer font-semibold mb-2 text-muted-foreground hover:text-foreground">
+                    Stack Trace (click to expand)
+                  </summary>
+                  <pre className="text-xs overflow-x-auto bg-muted p-4 rounded mt-2">
+                    {this.state.errorInfo.componentStack}
+                  </pre>
+                </details>
+              )}
+              
+              <div className="flex space-x-3">
+                <Button onClick={this.handleReset} className="flex-1">
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Reset Application
+                </Button>
+                <Button 
+                  variant="outline" 
+                  onClick={() => window.location.reload()}
+                  className="flex-1"
+                >
+                  Reload Page
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+export default ErrorBoundary;
+</file>
+
 <file path="src/components/layout/Footer.tsx">
 import { Link } from 'react-router-dom';
 import { Github, Twitter, Book } from 'lucide-react';
@@ -3174,20 +4782,183 @@ export default function CreateDIDPage() {
 
 <file path="src/pages/Credentials.tsx">
 // src/pages/Credentials.tsx
-import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
+import { useEffect, useState } from 'react';
+import { useWalletStore } from '@/store/wallet.store';
+import { useDIDStore } from '@/store/did.store';
+import { useCredentialsStore } from '@/store/credentials.store';
+import CredentialsList from '@/components/credentials/CredentialsList';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { AlertCircle, Award, RefreshCw } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import type { Credential } from '@/components/credentials/CredentialCard';
 
 export default function Credentials() {
+  const navigate = useNavigate();
+  const { isConnected, account } = useWalletStore();
+  const { hasDID, didAddress } = useDIDStore();
+  const { credentials, loading, setLoading } = useCredentialsStore();
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Fetch credentials when component mounts
+  useEffect(() => {
+    if (isConnected && hasDID && didAddress) {
+      fetchCredentials();
+    }
+  }, [isConnected, hasDID, didAddress]);
+
+  const fetchCredentials = async () => {
+    setLoading(true);
+    try {
+      // TODO: Replace with actual blockchain query
+      // For now, use mock data
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Mock credentials
+      const mockCredentials: Credential[] = [
+        {
+          id: 'cred_1',
+          holder: didAddress || '',
+          issuer: '5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY',
+          issuerName: 'Massachusetts Institute of Technology',
+          credentialHash: '0x' + Array(64).fill(0).map(() => Math.floor(Math.random() * 16).toString(16)).join(''),
+          credentialType: "Bachelor's Degree",
+          degreeName: 'Bachelor of Science in Computer Science',
+          fieldOfStudy: 'Computer Science',
+          issuedAt: Date.now() - 365 * 24 * 60 * 60 * 1000, // 1 year ago
+          revoked: false,
+          metadata: 'Graduated with honors. GPA: 3.85',
+        },
+        {
+          id: 'cred_2',
+          holder: didAddress || '',
+          issuer: '5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty',
+          issuerName: 'Stanford University',
+          credentialHash: '0x' + Array(64).fill(0).map(() => Math.floor(Math.random() * 16).toString(16)).join(''),
+          credentialType: "Master's Degree",
+          degreeName: 'Master of Science in Artificial Intelligence',
+          fieldOfStudy: 'Artificial Intelligence',
+          issuedAt: Date.now() - 90 * 24 * 60 * 60 * 1000, // 90 days ago
+          revoked: false,
+          metadata: 'Thesis: "Deep Learning for Medical Imaging"',
+        },
+        {
+          id: 'cred_3',
+          holder: didAddress || '',
+          issuer: '5FLSigC9HGRKVhB9FiEo4Y3koPsNmBmLJbpXg2mp1hXcS59Y',
+          issuerName: 'Harvard University',
+          credentialHash: '0x' + Array(64).fill(0).map(() => Math.floor(Math.random() * 16).toString(16)).join(''),
+          credentialType: 'Certificate',
+          degreeName: 'Data Science Professional Certificate',
+          fieldOfStudy: 'Data Science',
+          issuedAt: Date.now() - 180 * 24 * 60 * 60 * 1000, // 180 days ago
+          expiresAt: Date.now() + 365 * 24 * 60 * 60 * 1000, // Expires in 1 year
+          revoked: false,
+        },
+      ];
+
+      useCredentialsStore.setState({ credentials: mockCredentials });
+    } catch (error) {
+      console.error('Failed to fetch credentials:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await fetchCredentials();
+    setRefreshing(false);
+  };
+
+  // Not connected
+  if (!isConnected) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Card className="max-w-md">
+          <CardHeader>
+            <div className="flex items-center space-x-2 text-yellow-600 mb-2">
+              <AlertCircle className="h-5 w-5" />
+              <CardTitle>Connect Your Wallet</CardTitle>
+            </div>
+            <CardDescription>
+              Please connect your wallet to view your credentials
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      </div>
+    );
+  }
+
+  // No DID
+  if (!hasDID) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Card className="max-w-md">
+          <CardHeader>
+            <div className="flex items-center space-x-2 text-yellow-600 mb-2">
+              <AlertCircle className="h-5 w-5" />
+              <CardTitle>DID Required</CardTitle>
+            </div>
+            <CardDescription>
+              You need to create a Decentralized Identifier to receive and manage credentials
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button onClick={() => navigate('/dashboard')} className="w-full">
+              Create DID
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-bold">My Credentials</h1>
-      <Card>
-        <CardHeader>
-          <CardTitle>Credentials List</CardTitle>
-          <CardDescription>
-            Your academic credentials will appear here
-          </CardDescription>
-        </CardHeader>
-      </Card>
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold flex items-center">
+            <Award className="h-8 w-8 mr-3 text-primary" />
+            My Credentials
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            View and manage your academic credentials
+          </p>
+        </div>
+        <Button
+          onClick={handleRefresh}
+          disabled={refreshing}
+          variant="outline"
+        >
+          <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+          Refresh
+        </Button>
+      </div>
+
+      {/* Info Banner */}
+      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+        <div className="flex items-start space-x-3">
+          <Award className="h-5 w-5 text-blue-600 dark:text-blue-500 flex-shrink-0 mt-0.5" />
+          <div className="text-sm">
+            <p className="font-semibold text-blue-800 dark:text-blue-400">
+              Your Credential Wallet
+            </p>
+            <p className="text-blue-700 dark:text-blue-300 mt-1">
+              All credentials issued to your DID appear here. You can view, verify, share, and export them at any time.
+              These credentials are permanently stored on the blockchain and can be independently verified by anyone.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Credentials List */}
+      <CredentialsList 
+        credentials={credentials}
+        loading={loading}
+        emptyMessage="You haven't received any credentials yet"
+      />
     </div>
   );
 }
@@ -3615,29 +5386,75 @@ export default function Institutions() {
 <file path="src/pages/IssueCredential.tsx">
 import { useNavigate } from 'react-router-dom';
 import { useDIDStore } from '@/store/did.store';
-import IssueCredentialForm from '@/components/credentials/IssueCredentialForm';
-import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { AlertCircle, ArrowLeft } from 'lucide-react';
+import { lazy, Suspense, useEffect } from 'react';
+import { Spinner } from '@/components/ui/Spinner';
+
+// Lazy load the form component to prevent blocking the app
+const IssueCredentialForm = lazy(() => import('@/components/credentials/IssueCredentialForm'));
 
 export default function IssueCredential() {
   const navigate = useNavigate();
-  const { isInstitution } = useDIDStore();
+  const { isInstitution, hasDID } = useDIDStore();
 
   const handleSuccess = (credentialId: string) => {
-    // Navigate to credentials page or show success
+    // Navigate to institution page after success
     navigate('/institution');
   };
 
+  const handleCancel = () => {
+    navigate('/institution');
+  };
+
+  // Check if user has DID
+  if (!hasDID) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Card className="max-w-md">
+          <CardHeader>
+            <div className="flex items-center space-x-2 text-yellow-600 mb-2">
+              <AlertCircle className="h-5 w-5" />
+              <CardTitle>DID Required</CardTitle>
+            </div>
+            <CardDescription>
+              You need to create a Decentralized Identifier (DID) before you can issue credentials.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button onClick={() => navigate('/dashboard')} className="w-full">
+              Create DID
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Check if user is an institution
   if (!isInstitution) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <Card className="max-w-md">
           <CardHeader>
-            <CardTitle>Institution Access Required</CardTitle>
+            <div className="flex items-center space-x-2 text-red-600 mb-2">
+              <AlertCircle className="h-5 w-5" />
+              <CardTitle>Institution Access Required</CardTitle>
+            </div>
             <CardDescription>
-              Only verified institutions can issue credentials.
-              Please register as an institution first.
+              Only verified institutions can issue credentials. Please register as an institution first.
             </CardDescription>
           </CardHeader>
+          <CardContent className="space-y-3">
+            <Button onClick={() => navigate('/institution')} className="w-full">
+              Register as Institution
+            </Button>
+            <Button onClick={() => navigate('/dashboard')} variant="outline" className="w-full">
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Back to Dashboard
+            </Button>
+          </CardContent>
         </Card>
       </div>
     );
@@ -3645,10 +5462,21 @@ export default function IssueCredential() {
 
   return (
     <div className="py-8">
-      <IssueCredentialForm 
-        onSuccess={handleSuccess}
-        onCancel={() => navigate('/institution')}
-      />
+      <Suspense 
+        fallback={
+          <div className="flex items-center justify-center min-h-[60vh]">
+            <div className="text-center">
+              <Spinner size="lg" className="mx-auto mb-4" />
+              <p className="text-muted-foreground">Loading form...</p>
+            </div>
+          </div>
+        }
+      >
+        <IssueCredentialForm 
+          onSuccess={handleSuccess}
+          onCancel={handleCancel}
+        />
+      </Suspense>
     </div>
   );
 }
@@ -3656,41 +5484,47 @@ export default function IssueCredential() {
 
 <file path="src/pages/Verify.tsx">
 // src/pages/Verify.tsx
-import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
-import { Search } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import VerifyCredential from '@/components/credentials/VerifyCredential';
+import { Shield } from 'lucide-react';
 
 export default function Verify() {
+  const [searchParams] = useSearchParams();
+  const hashParam = searchParams.get('hash');
+
   return (
-    <div className="space-y-6 max-w-2xl mx-auto">
+    <div className="max-w-4xl mx-auto space-y-6">
+      {/* Page Header */}
       <div className="text-center">
-        <h1 className="text-3xl font-bold mb-2">Verify Credential</h1>
-        <p className="text-muted-foreground">
-          Enter a credential hash to verify its authenticity
+        <div className="inline-flex items-center justify-center h-16 w-16 rounded-full bg-primary/10 mb-4">
+          <Shield className="h-8 w-8 text-primary" />
+        </div>
+        <h1 className="text-3xl md:text-4xl font-bold mb-2">
+          Verify Academic Credential
+        </h1>
+        <p className="text-muted-foreground max-w-2xl mx-auto">
+          Instantly verify the authenticity of any academic credential issued on our blockchain.
+          No account required.
         </p>
       </div>
-      
-      <Card>
-        <CardHeader>
-          <CardTitle>Credential Hash</CardTitle>
-          <CardDescription>
-            Paste the credential hash or upload a document
-          </CardDescription>
-        </CardHeader>
-        <div className="p-6 pt-0">
-          <div className="flex space-x-2">
-            <input
-              type="text"
-              placeholder="Enter credential hash (0x...)"
-              className="flex-1 px-3 py-2 border border-border rounded-md bg-background"
-            />
-            <Button>
-              <Search className="h-4 w-4 mr-2" />
-              Verify
-            </Button>
-          </div>
+
+      {/* Verification Component */}
+      <VerifyCredential initialHash={hashParam || undefined} />
+
+      {/* Trust Indicators */}
+      <div className="mt-12 pt-8 border-t border-border">
+        <p className="text-center text-sm text-muted-foreground mb-6">
+          Trusted by institutions and employers worldwide
+        </p>
+        <div className="flex flex-wrap justify-center items-center gap-8 opacity-50">
+          <div className="text-2xl font-bold">MIT</div>
+          <div className="text-2xl font-bold">Stanford</div>
+          <div className="text-2xl font-bold">Harvard</div>
+          <div className="text-2xl font-bold">Oxford</div>
+          <div className="text-2xl font-bold">Cambridge</div>
         </div>
-      </Card>
+      </div>
     </div>
   );
 }
@@ -4221,6 +6055,9 @@ import Institution from './pages/Institution';
 import IssueCredential from './pages/IssueCredential';
 import Verify from './pages/Verify';
 import Institutions from './pages/Institutions';
+import ErrorBoundary from './components/error/ErrorBoundary';
+import { Suspense } from 'react';
+import { Spinner } from './components/ui/Spinner';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -4232,24 +6069,38 @@ const queryClient = new QueryClient({
   },
 });
 
+// Loading fallback
+const LoadingFallback = () => (
+  <div className="flex items-center justify-center min-h-[60vh]">
+    <div className="text-center">
+      <Spinner size="lg" className="mx-auto mb-4" />
+      <p className="text-muted-foreground">Loading...</p>
+    </div>
+  </div>
+);
+
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <Router>
-        <MainLayout>
-          <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/credentials" element={<Credentials />} />
-            <Route path="/institution" element={<Institution />} />
-            {/* <Route path="/institution/issue" element={<IssueCredential />} /> */}
-            <Route path="/verify" element={<Verify />} />
-            <Route path="/institutions" element={<Institutions />} />
-          </Routes>
-        </MainLayout>
-      </Router>
-      <Toaster position="top-right" richColors />
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <Router>
+          <Suspense fallback={<LoadingFallback />}>
+            <MainLayout>
+              <Routes>
+                <Route path="/" element={<Home />} />
+                <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/credentials" element={<Credentials />} />
+                <Route path="/institution" element={<Institution />} />
+                <Route path="/institution/issue" element={<IssueCredential />} />
+                <Route path="/verify" element={<Verify />} />
+                <Route path="/institutions" element={<Institutions />} />
+              </Routes>
+            </MainLayout>
+          </Suspense>
+        </Router>
+        <Toaster position="top-right" richColors />
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }
 
