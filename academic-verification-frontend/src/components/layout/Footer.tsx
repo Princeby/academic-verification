@@ -65,7 +65,7 @@ export default function Footer() {
             <h3 className="font-semibold text-sm mb-3">Community</h3>
             <div className="flex space-x-4">
               <a 
-                href="https://github.com" 
+                href="https://github.com/Princeby/academic-verification" 
                 target="_blank" 
                 rel="noopener noreferrer"
                 className="text-muted-foreground hover:text-foreground transition-colors"
@@ -85,7 +85,7 @@ export default function Footer() {
         </div>
 
         <div className="mt-8 pt-6 border-t border-border flex flex-col sm:flex-row justify-between items-center text-sm text-muted-foreground">
-          <p>© 2024 Academic Verify. All rights reserved.</p>
+          <p>© 2025 Academic Verify. All rights reserved.</p>
           <div className="flex items-center space-x-4 mt-4 sm:mt-0">
             <span>v1.0.0</span>
             <span>•</span>

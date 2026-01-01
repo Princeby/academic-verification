@@ -25,6 +25,7 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
       // Fix bn.js default export issue
       'bn.js': path.resolve(__dirname, './node_modules/bn.js/lib/bn.js'),
+      'eventemitter3': path.resolve(__dirname, './node_modules/eventemitter3/index.js'),
     },
   },
   

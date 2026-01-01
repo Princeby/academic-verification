@@ -1,0 +1,4454 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+credential/
+  src/
+    benchmarking.rs
+    lib.rs
+    mock.rs
+    tests.rs
+    weights.rs
+  Cargo.toml
+did/
+  src/
+    benchmarking.rs
+    lib.rs
+    mock.rs
+    tests.rs
+    weights.rs
+  Cargo.toml
+reputation/
+  src/
+    benchmarking.rs
+    lib.rs
+    mock.rs
+    tests.rs
+    weights.rs
+  Cargo.toml
+template/
+  src/
+    benchmarking.rs
+    lib.rs
+    mock.rs
+    tests.rs
+    weights.rs
+  Cargo.toml
+README.md
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="credential/src/benchmarking.rs">
+
+</file>
+
+<file path="credential/src/lib.rs">
+#![cfg_attr(not(feature = "std"), no_std)]
+
+//! # Credential Pallet
+//!
+//! Academic credential issuance and verification
+
+pub use pallet::*;
+
+#[cfg(test)]
+mod mock;
+
+#[cfg(test)]
+mod tests;
+
+pub mod weights;
+pub use weights::*;
+
+#[frame::pallet]
+pub mod pallet {
+    use frame::{hashing, prelude::*};
+
+    pub use scale_info::prelude::vec::Vec;
+
+    use crate::WeightInfo;
+
+    #[pallet::pallet]
+    pub struct Pallet<T>(_);
+
+    // ================== Credential Types ==================
+
+    /// Types of credentials supported
+    #[derive(
+        Clone,
+        Encode,
+        Decode,
+        Eq,
+        PartialEq,
+        RuntimeDebug,
+        TypeInfo,
+        MaxEncodedLen,
+        DecodeWithMemTracking,
+    )]
+    pub enum CredentialType {
+        /// Bachelor's degree
+        Degree,
+        /// Master's degree
+        MastersDegree,
+        /// Doctorate (PhD)
+        Doctorate,
+        /// Certificate program
+        Certificate,
+        /// Academic transcript
+        Transcript,
+        /// Professional certification
+        ProfessionalCertification,
+        /// Custom credential type
+        Other,
+    }
+
+    /// Status of a credential
+    #[derive(Clone, Encode, Decode, Eq, PartialEq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+    pub enum CredentialStatus {
+        /// Credential is valid and active
+        Active,
+        /// Credential has been revoked
+        Revoked,
+        /// Credential has expired
+        Expired,
+    }
+
+    /// Core credential structure stored on-chain
+    #[derive(Clone, Encode, Decode, Eq, PartialEq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+    #[scale_info(skip_type_params(T))]
+    pub struct Credential<T: Config> {
+        /// Unique identifier for this credential
+        pub credential_id: [u8; 32],
+        /// Hash of the credential content (SHA256)
+        pub credential_hash: [u8; 32],
+        /// The holder of the credential
+        pub holder: T::AccountId,
+        /// The issuer (must be a verified institution)
+        pub issuer: T::AccountId,
+        /// Type of credential
+        pub credential_type: CredentialType,
+        /// Optional metadata (e.g., degree name, field of study)
+        pub metadata: BoundedVec<u8, T::MaxMetadataSize>,
+        /// Block number when issued
+        pub issued_at: BlockNumberFor<T>,
+        /// Optional expiration block number
+        pub expires_at: Option<BlockNumberFor<T>>,
+        /// Current status
+        pub status: CredentialStatus,
+    }
+
+    /// Lightweight credential reference for indexing
+    #[derive(Clone, Encode, Decode, Eq, PartialEq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+    pub struct CredentialReference {
+        pub credential_id: [u8; 32],
+        pub credential_type: CredentialType,
+    }
+
+    #[pallet::config]
+    pub trait Config: frame_system::Config + did::Config {
+        /// The overarching event type
+        type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
+
+        /// Maximum size of credential metadata
+        #[pallet::constant]
+        type MaxMetadataSize: Get<u32>;
+
+        /// Maximum number of credentials per holder
+        #[pallet::constant]
+        type MaxCredentialsPerHolder: Get<u32>;
+
+        ///Weight information for extrinsics
+        type WeightInfo: WeightInfo;
+    }
+
+    #[pallet::event]
+    #[pallet::generate_deposit(pub(super) fn deposit_event)]
+    pub enum Event<T: Config> {
+        /// A new credential was issued
+        CredentialIssued {
+            credential_id: [u8; 32],
+            credential_hash: [u8; 32],
+            holder: T::AccountId,
+            issuer: T::AccountId,
+            credential_type: CredentialType,
+        },
+        /// A credential was revoked
+        CredentialRevoked {
+            credential_id: [u8; 32],
+            revoked_by: T::AccountId,
+        },
+        /// A credential was verified
+        CredentialVerified {
+            credential_id: [u8; 32],
+            verified_by: T::AccountId,
+        },
+        /// Credential metadata was updated
+        CredentialMetadataUpdated { credential_id: [u8; 32] },
+    }
+
+    #[pallet::error]
+    pub enum Error<T> {
+        /// Credential not found
+        CredentialNotFound,
+        /// Credential already exists with this hash
+        CredentialAlreadyExists,
+        /// Not authorized to perform this action
+        NotAuthorized,
+        /// Issuer is not a verified institution
+        IssuerNotVerified,
+        /// Issuer has no DID
+        IssuerHasNoDid,
+        /// Holder has no DID
+        HolderHasNoDid,
+        /// Credential has already been revoked
+        CredentialAlreadyRevoked,
+        /// Credential has expired
+        CredentialExpired,
+        /// Too many credentials for this holder
+        TooManyCredentials,
+        /// Metadata exceeds maximum size
+        MetadataTooLarge,
+        /// Invalid credential hash
+        InvalidCredentialHash,
+        /// Credential is not active
+        CredentialNotActive,
+        /// DID is not active
+        DidNotActive,
+    }
+
+    // ================== Storage Items ==================
+
+    /// Main storage: credential_id => Credential
+    #[pallet::storage]
+    #[pallet::getter(fn credentials)]
+    pub type Credentials<T: Config> = StorageMap<
+        _,
+        Blake2_128Concat,
+        [u8; 32], // credential_id
+        Credential<T>,
+    >;
+
+    /// Index: holder => list of credential references
+    #[pallet::storage]
+    #[pallet::getter(fn credentials_by_holder)]
+    pub type CredentialsByHolder<T: Config> = StorageMap<
+        _,
+        Blake2_128Concat,
+        T::AccountId,
+        BoundedVec<CredentialReference, T::MaxCredentialsPerHolder>,
+        ValueQuery,
+    >;
+
+    /// Index: issuer => list of credential IDs
+    #[pallet::storage]
+    #[pallet::getter(fn credentials_by_issuer)]
+    pub type CredentialsByIssuer<T: Config> = StorageMap<
+        _,
+        Blake2_128Concat,
+        T::AccountId,
+        BoundedVec<[u8; 32], T::MaxCredentialsPerHolder>,
+        ValueQuery,
+    >;
+
+    /// Index: credential_hash => credential_id (for verification)
+    #[pallet::storage]
+    #[pallet::getter(fn credential_by_hash)]
+    pub type CredentialByHash<T: Config> = StorageMap<
+        _,
+        Blake2_128Concat,
+        [u8; 32], // credential_hash
+        [u8; 32], // credential_id
+    >;
+
+    /// Counter for generating unique credential IDs
+    #[pallet::storage]
+    #[pallet::getter(fn next_credential_id)]
+    pub type NextCredentialId<T: Config> = StorageValue<_, u64, ValueQuery>;
+
+    // ================== Dispatchable Functions ==================
+
+    #[pallet::call]
+    impl<T: Config> Pallet<T> {
+        /// Issue a new credential
+        #[pallet::call_index(0)]
+        #[pallet::weight(<T as Config>::WeightInfo::issue_credential())]
+        pub fn issue_credential(
+            origin: OriginFor<T>,
+            holder: T::AccountId,
+            credential_hash: [u8; 32],
+            credential_type: CredentialType,
+            metadata: BoundedVec<u8, T::MaxMetadataSize>,
+            expires_at: Option<BlockNumberFor<T>>,
+        ) -> DispatchResult {
+            let issuer = ensure_signed(origin)?;
+
+            // Verify issuer is a verified institution
+            let institution =
+                did::Institutions::<T>::get(&issuer).ok_or(Error::<T>::IssuerNotVerified)?;
+            ensure!(institution.verified, Error::<T>::IssuerNotVerified);
+
+            // Verify issuer has active DID
+            let issuer_did =
+                did::DidDocuments::<T>::get(&issuer).ok_or(Error::<T>::IssuerHasNoDid)?;
+            ensure!(issuer_did.active, Error::<T>::DidNotActive);
+
+            // Verify holder has DID
+            let holder_did =
+                did::DidDocuments::<T>::get(&holder).ok_or(Error::<T>::HolderHasNoDid)?;
+            ensure!(holder_did.active, Error::<T>::DidNotActive);
+
+            // Ensure credential hash doesn't already exist
+            ensure!(
+                !CredentialByHash::<T>::contains_key(&credential_hash),
+                Error::<T>::CredentialAlreadyExists
+            );
+
+            // Generate unique credential ID
+            let counter = NextCredentialId::<T>::get();
+            let credential_id = Self::generate_credential_id(counter, &issuer, &holder);
+            NextCredentialId::<T>::put(counter.saturating_add(1));
+
+            // Create credential
+            let credential = Credential {
+                credential_id,
+                credential_hash,
+                holder: holder.clone(),
+                issuer: issuer.clone(),
+                credential_type: credential_type.clone(),
+                metadata,
+                issued_at: frame_system::Pallet::<T>::block_number(),
+                expires_at,
+                status: CredentialStatus::Active,
+            };
+
+            // Store credential
+            Credentials::<T>::insert(&credential_id, credential);
+
+            // Update holder index
+            CredentialsByHolder::<T>::try_mutate(&holder, |credentials| -> DispatchResult {
+                let reference = CredentialReference {
+                    credential_id,
+                    credential_type: credential_type.clone(),
+                };
+                credentials
+                    .try_push(reference)
+                    .map_err(|_| Error::<T>::TooManyCredentials)?;
+                Ok(())
+            })?;
+
+            // Update issuer index
+            CredentialsByIssuer::<T>::try_mutate(&issuer, |credentials| -> DispatchResult {
+                credentials
+                    .try_push(credential_id)
+                    .map_err(|_| Error::<T>::TooManyCredentials)?;
+                Ok(())
+            })?;
+
+            // Store hash mapping
+            CredentialByHash::<T>::insert(&credential_hash, credential_id);
+
+            // Emit event
+            Self::deposit_event(Event::CredentialIssued {
+                credential_id,
+                credential_hash,
+                holder,
+                issuer,
+                credential_type,
+            });
+
+            Ok(())
+        }
+
+        /// Revoke a credential (only by issuer)
+        #[pallet::call_index(1)]
+        #[pallet::weight(<T as Config>::WeightInfo::revoke_credential())]
+        pub fn revoke_credential(origin: OriginFor<T>, credential_id: [u8; 32]) -> DispatchResult {
+            let revoker = ensure_signed(origin)?;
+
+            // Get credential
+            let mut credential =
+                Credentials::<T>::get(&credential_id).ok_or(Error::<T>::CredentialNotFound)?;
+
+            // Only issuer can revoke
+            ensure!(credential.issuer == revoker, Error::<T>::NotAuthorized);
+
+            // Ensure not already revoked
+            ensure!(
+                credential.status != CredentialStatus::Revoked,
+                Error::<T>::CredentialAlreadyRevoked
+            );
+
+            // Update status
+            credential.status = CredentialStatus::Revoked;
+            Credentials::<T>::insert(&credential_id, credential);
+
+            // Emit event
+            Self::deposit_event(Event::CredentialRevoked {
+                credential_id,
+                revoked_by: revoker,
+            });
+
+            Ok(())
+        }
+
+        /// Verify a credential by hash (read-only verification, emits event)
+        #[pallet::call_index(2)]
+        #[pallet::weight(<T as Config>::WeightInfo::verify_credential())]
+        pub fn verify_credential(
+            origin: OriginFor<T>,
+            credential_hash: [u8; 32],
+        ) -> DispatchResult {
+            let verifier = ensure_signed(origin)?;
+
+            // Look up credential by hash
+            let credential_id = CredentialByHash::<T>::get(&credential_hash)
+                .ok_or(Error::<T>::CredentialNotFound)?;
+
+            let credential =
+                Credentials::<T>::get(&credential_id).ok_or(Error::<T>::CredentialNotFound)?;
+
+            // Check if credential is active
+            ensure!(
+                credential.status == CredentialStatus::Active,
+                Error::<T>::CredentialNotActive
+            );
+
+            // Check expiration if set
+            if let Some(expires_at) = credential.expires_at {
+                let current_block = frame_system::Pallet::<T>::block_number();
+                ensure!(current_block <= expires_at, Error::<T>::CredentialExpired);
+            }
+
+            // Emit verification event
+            Self::deposit_event(Event::CredentialVerified {
+                credential_id,
+                verified_by: verifier,
+            });
+
+            Ok(())
+        }
+
+        /// Update credential metadata (only by issuer)
+        #[pallet::call_index(3)]
+        #[pallet::weight(<T as Config>::WeightInfo::update_credential_metadata())]
+        pub fn update_credential_metadata(
+            origin: OriginFor<T>,
+            credential_id: [u8; 32],
+            new_metadata: BoundedVec<u8, T::MaxMetadataSize>,
+        ) -> DispatchResult {
+            let updater = ensure_signed(origin)?;
+
+            // Get credential
+            let mut credential =
+                Credentials::<T>::get(&credential_id).ok_or(Error::<T>::CredentialNotFound)?;
+
+            // Only issuer can update metadata
+            ensure!(credential.issuer == updater, Error::<T>::NotAuthorized);
+
+            // Ensure credential is active
+            ensure!(
+                credential.status == CredentialStatus::Active,
+                Error::<T>::CredentialNotActive
+            );
+
+            // Update metadata
+            credential.metadata = new_metadata;
+            Credentials::<T>::insert(&credential_id, credential);
+
+            // Emit event
+            Self::deposit_event(Event::CredentialMetadataUpdated { credential_id });
+
+            Ok(())
+        }
+    }
+
+    // ================== Helper Functions ==================
+
+    impl<T: Config> Pallet<T> {
+        /// Generate a unique credential ID
+        fn generate_credential_id(
+            counter: u64,
+            issuer: &T::AccountId,
+            holder: &T::AccountId,
+        ) -> [u8; 32] {
+            let mut data = Vec::new();
+            data.extend_from_slice(&counter.to_le_bytes());
+            data.extend_from_slice(&issuer.encode());
+            data.extend_from_slice(&holder.encode());
+            hashing::blake2_256(&data)
+        }
+    }
+}
+</file>
+
+<file path="credential/src/mock.rs">
+use crate as credential;
+use frame::prelude::*;
+use frame::testing_prelude::*;
+
+type Block = frame_system::mocking::MockBlock<Test>;
+
+// Configure a mock runtime to test the pallet
+#[frame_construct_runtime]
+mod runtime {
+    #[runtime::runtime]
+    #[runtime::derive(
+        RuntimeCall,
+        RuntimeEvent,
+        RuntimeError,
+        RuntimeOrigin,
+        RuntimeFreezeReason,
+        RuntimeHoldReason,
+        RuntimeSlashReason,
+        RuntimeLockId,
+        RuntimeTask
+    )]
+    pub struct Test;
+
+    #[runtime::pallet_index(0)]
+    pub type System = frame_system;
+
+    #[runtime::pallet_index(1)]
+    pub type Did = did;
+
+    #[runtime::pallet_index(2)]
+    pub type Credential = credential;
+}
+
+// System pallet configuration
+#[derive_impl(frame_system::config_preludes::TestDefaultConfig)]
+impl frame_system::Config for Test {
+    type Block = Block;
+}
+
+// DID pallet configuration (required by Credential pallet)
+parameter_types! {
+    pub const MaxDocumentSize: u32 = 1024;
+    pub const MaxPublicKeys: u32 = 10;
+}
+
+impl did::Config for Test {
+    type RuntimeEvent = RuntimeEvent;
+    type MaxDocumentSize = MaxDocumentSize;
+    type MaxPublicKeys = MaxPublicKeys;
+    type WeightInfo = did::weights::SubstrateWeight;
+}
+
+// Credential pallet configuration
+parameter_types! {
+    pub const MaxMetadataSize: u32 = 512;
+    pub const MaxCredentialsPerHolder: u32 = 100;
+}
+
+impl credential::Config for Test {
+    type RuntimeEvent = RuntimeEvent;
+    type MaxMetadataSize = MaxMetadataSize;
+    type MaxCredentialsPerHolder = MaxCredentialsPerHolder;
+    type WeightInfo = credential::weights::SubstrateWeight;
+}
+
+// Test externalities initialization
+pub fn new_test_ext() -> TestExternalities {
+    frame_system::GenesisConfig::<Test>::default()
+        .build_storage()
+        .unwrap()
+        .into()
+}
+
+// Helper functions for tests
+pub fn create_did_for_account(account: u64) {
+    let public_key = [account as u8; 32];
+    assert_ok!(Did::create_did(
+        RuntimeOrigin::signed(account),
+        public_key,
+        did::KeyType::Ed25519
+    ));
+}
+
+pub fn register_institution(account: u64, name: &str) {
+    create_did_for_account(account);
+    
+    let name_bytes: BoundedVec<u8, MaxDocumentSize> = 
+        name.as_bytes().to_vec().try_into().unwrap();
+    
+    assert_ok!(Did::register_institution(
+        RuntimeOrigin::signed(account),
+        name_bytes
+    ));
+}
+
+pub fn verify_institution(account: u64) {
+    assert_ok!(Did::verify_institution(
+        RuntimeOrigin::root(),
+        account
+    ));
+}
+
+pub fn setup_verified_institution(account: u64, name: &str) {
+    register_institution(account, name);
+    verify_institution(account);
+}
+</file>
+
+<file path="credential/src/tests.rs">
+use crate::{mock::*, Error, Event, CredentialType, CredentialStatus};
+use frame::testing_prelude::*;
+
+// ================== Test Constants ==================
+
+const UNIVERSITY: u64 = 1;
+const STUDENT: u64 = 2;
+const VERIFIER: u64 = 3;
+
+// ================== Issue Credential Tests ==================
+
+#[test]
+fn issue_credential_works() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        // Setup: Create verified institution and student DID
+        setup_verified_institution(UNIVERSITY, "MIT");
+        create_did_for_account(STUDENT);
+
+        // Create credential data
+        let credential_hash = [1u8; 32];
+        let metadata: BoundedVec<u8, MaxMetadataSize> = 
+            b"Computer Science Degree".to_vec().try_into().unwrap();
+
+        // Issue credential
+        assert_ok!(Credential::issue_credential(
+            RuntimeOrigin::signed(UNIVERSITY),
+            STUDENT,
+            credential_hash,
+            CredentialType::Degree,
+            metadata,
+            None
+        ));
+
+        // Verify event was emitted
+        System::assert_last_event(
+            Event::CredentialIssued {
+                credential_id: Credential::credential_by_hash(credential_hash).unwrap(),
+                credential_hash,
+                holder: STUDENT,
+                issuer: UNIVERSITY,
+                credential_type: CredentialType::Degree,
+            }.into()
+        );
+    });
+}
+
+#[test]
+fn issue_credential_fails_if_issuer_not_verified() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        // Setup: Register but don't verify institution
+        register_institution(UNIVERSITY, "Unverified University");
+        create_did_for_account(STUDENT);
+
+        let credential_hash = [1u8; 32];
+        let metadata: BoundedVec<u8, MaxMetadataSize> = 
+            b"Degree".to_vec().try_into().unwrap();
+
+        // Should fail because institution is not verified
+        assert_noop!(
+            Credential::issue_credential(
+                RuntimeOrigin::signed(UNIVERSITY),
+                STUDENT,
+                credential_hash,
+                CredentialType::Degree,
+                metadata,
+                None
+            ),
+            Error::<Test>::IssuerNotVerified
+        );
+    });
+}
+
+#[test]
+fn issue_credential_fails_if_issuer_has_no_did() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        create_did_for_account(STUDENT);
+
+        let credential_hash = [1u8; 32];
+        let metadata: BoundedVec<u8, MaxMetadataSize> = 
+            b"Degree".to_vec().try_into().unwrap();
+
+        // Should fail because issuer has no DID
+        assert_noop!(
+            Credential::issue_credential(
+                RuntimeOrigin::signed(UNIVERSITY),
+                STUDENT,
+                credential_hash,
+                CredentialType::Degree,
+                metadata,
+                None
+            ),
+            Error::<Test>::IssuerNotVerified
+        );
+    });
+}
+
+#[test]
+fn issue_credential_fails_if_holder_has_no_did() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        setup_verified_institution(UNIVERSITY, "MIT");
+        // Don't create DID for student
+
+        let credential_hash = [1u8; 32];
+        let metadata: BoundedVec<u8, MaxMetadataSize> = 
+            b"Degree".to_vec().try_into().unwrap();
+
+        // Should fail because holder has no DID
+        assert_noop!(
+            Credential::issue_credential(
+                RuntimeOrigin::signed(UNIVERSITY),
+                STUDENT,
+                credential_hash,
+                CredentialType::Degree,
+                metadata,
+                None
+            ),
+            Error::<Test>::HolderHasNoDid
+        );
+    });
+}
+
+#[test]
+fn issue_credential_fails_if_holder_did_inactive() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        setup_verified_institution(UNIVERSITY, "MIT");
+        create_did_for_account(STUDENT);
+        
+        // Deactivate student's DID
+        assert_ok!(Did::deactivate_did(RuntimeOrigin::signed(STUDENT)));
+
+        let credential_hash = [1u8; 32];
+        let metadata: BoundedVec<u8, MaxMetadataSize> = 
+            b"Degree".to_vec().try_into().unwrap();
+
+        // Should fail because holder's DID is inactive
+        assert_noop!(
+            Credential::issue_credential(
+                RuntimeOrigin::signed(UNIVERSITY),
+                STUDENT,
+                credential_hash,
+                CredentialType::Degree,
+                metadata,
+                None
+            ),
+            Error::<Test>::DidNotActive
+        );
+    });
+}
+
+#[test]
+fn issue_credential_fails_for_duplicate_hash() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        setup_verified_institution(UNIVERSITY, "MIT");
+        create_did_for_account(STUDENT);
+
+        let credential_hash = [1u8; 32];
+        let metadata: BoundedVec<u8, MaxMetadataSize> = 
+            b"Degree".to_vec().try_into().unwrap();
+
+        // Issue first credential
+        assert_ok!(Credential::issue_credential(
+            RuntimeOrigin::signed(UNIVERSITY),
+            STUDENT,
+            credential_hash,
+            CredentialType::Degree,
+            metadata.clone(),
+            None
+        ));
+
+        // Try to issue another credential with same hash
+        assert_noop!(
+            Credential::issue_credential(
+                RuntimeOrigin::signed(UNIVERSITY),
+                STUDENT,
+                credential_hash,
+                CredentialType::Certificate,
+                metadata,
+                None
+            ),
+            Error::<Test>::CredentialAlreadyExists
+        );
+    });
+}
+
+#[test]
+fn issue_credential_stores_correct_data() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        setup_verified_institution(UNIVERSITY, "MIT");
+        create_did_for_account(STUDENT);
+
+        let credential_hash = [1u8; 32];
+        let metadata: BoundedVec<u8, MaxMetadataSize> = 
+            b"Computer Science".to_vec().try_into().unwrap();
+
+        assert_ok!(Credential::issue_credential(
+            RuntimeOrigin::signed(UNIVERSITY),
+            STUDENT,
+            credential_hash,
+            CredentialType::Degree,
+            metadata.clone(),
+            Some(1000)
+        ));
+
+        // Get credential ID
+        let credential_id = Credential::credential_by_hash(credential_hash).unwrap();
+        
+        // Verify stored credential
+        let stored = Credential::credentials(credential_id).unwrap();
+        assert_eq!(stored.holder, STUDENT);
+        assert_eq!(stored.issuer, UNIVERSITY);
+        assert_eq!(stored.credential_type, CredentialType::Degree);
+        assert_eq!(stored.metadata, metadata);
+        assert_eq!(stored.status, CredentialStatus::Active);
+        assert_eq!(stored.expires_at, Some(1000));
+    });
+}
+
+// ================== Revoke Credential Tests ==================
+
+#[test]
+fn revoke_credential_works() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        // Setup and issue credential
+        setup_verified_institution(UNIVERSITY, "MIT");
+        create_did_for_account(STUDENT);
+
+        let credential_hash = [1u8; 32];
+        let metadata: BoundedVec<u8, MaxMetadataSize> = 
+            b"Degree".to_vec().try_into().unwrap();
+
+        assert_ok!(Credential::issue_credential(
+            RuntimeOrigin::signed(UNIVERSITY),
+            STUDENT,
+            credential_hash,
+            CredentialType::Degree,
+            metadata,
+            None
+        ));
+
+        let credential_id = Credential::credential_by_hash(credential_hash).unwrap();
+
+        // Revoke credential
+        assert_ok!(Credential::revoke_credential(
+            RuntimeOrigin::signed(UNIVERSITY),
+            credential_id
+        ));
+
+        // Verify status changed
+        let credential = Credential::credentials(credential_id).unwrap();
+        assert_eq!(credential.status, CredentialStatus::Revoked);
+
+        // Verify event
+        System::assert_last_event(
+            Event::CredentialRevoked {
+                credential_id,
+                revoked_by: UNIVERSITY,
+            }.into()
+        );
+    });
+}
+
+#[test]
+fn revoke_credential_fails_if_not_issuer() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        // Setup
+        setup_verified_institution(UNIVERSITY, "MIT");
+        create_did_for_account(STUDENT);
+        create_did_for_account(VERIFIER);
+
+        let credential_hash = [1u8; 32];
+        let metadata: BoundedVec<u8, MaxMetadataSize> = 
+            b"Degree".to_vec().try_into().unwrap();
+
+        assert_ok!(Credential::issue_credential(
+            RuntimeOrigin::signed(UNIVERSITY),
+            STUDENT,
+            credential_hash,
+            CredentialType::Degree,
+            metadata,
+            None
+        ));
+
+        let credential_id = Credential::credential_by_hash(credential_hash).unwrap();
+
+        // Try to revoke as non-issuer
+        assert_noop!(
+            Credential::revoke_credential(
+                RuntimeOrigin::signed(VERIFIER),
+                credential_id
+            ),
+            Error::<Test>::NotAuthorized
+        );
+    });
+}
+
+#[test]
+fn revoke_credential_fails_if_already_revoked() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        setup_verified_institution(UNIVERSITY, "MIT");
+        create_did_for_account(STUDENT);
+
+        let credential_hash = [1u8; 32];
+        let metadata: BoundedVec<u8, MaxMetadataSize> = 
+            b"Degree".to_vec().try_into().unwrap();
+
+        assert_ok!(Credential::issue_credential(
+            RuntimeOrigin::signed(UNIVERSITY),
+            STUDENT,
+            credential_hash,
+            CredentialType::Degree,
+            metadata,
+            None
+        ));
+
+        let credential_id = Credential::credential_by_hash(credential_hash).unwrap();
+
+        // Revoke once
+        assert_ok!(Credential::revoke_credential(
+            RuntimeOrigin::signed(UNIVERSITY),
+            credential_id
+        ));
+
+        // Try to revoke again
+        assert_noop!(
+            Credential::revoke_credential(
+                RuntimeOrigin::signed(UNIVERSITY),
+                credential_id
+            ),
+            Error::<Test>::CredentialAlreadyRevoked
+        );
+    });
+}
+
+#[test]
+fn revoke_credential_fails_if_not_found() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        setup_verified_institution(UNIVERSITY, "MIT");
+
+        let fake_credential_id = [99u8; 32];
+
+        assert_noop!(
+            Credential::revoke_credential(
+                RuntimeOrigin::signed(UNIVERSITY),
+                fake_credential_id
+            ),
+            Error::<Test>::CredentialNotFound
+        );
+    });
+}
+
+// ================== Verify Credential Tests ==================
+
+#[test]
+fn verify_credential_works() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        // Setup and issue credential
+        setup_verified_institution(UNIVERSITY, "MIT");
+        create_did_for_account(STUDENT);
+        create_did_for_account(VERIFIER);
+
+        let credential_hash = [1u8; 32];
+        let metadata: BoundedVec<u8, MaxMetadataSize> = 
+            b"Degree".to_vec().try_into().unwrap();
+
+        assert_ok!(Credential::issue_credential(
+            RuntimeOrigin::signed(UNIVERSITY),
+            STUDENT,
+            credential_hash,
+            CredentialType::Degree,
+            metadata,
+            None
+        ));
+
+        let credential_id = Credential::credential_by_hash(credential_hash).unwrap();
+
+        // Verify credential
+        assert_ok!(Credential::verify_credential(
+            RuntimeOrigin::signed(VERIFIER),
+            credential_hash
+        ));
+
+        // Check event
+        System::assert_last_event(
+            Event::CredentialVerified {
+                credential_id,
+                verified_by: VERIFIER,
+            }.into()
+        );
+    });
+}
+
+#[test]
+fn verify_credential_fails_if_revoked() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        setup_verified_institution(UNIVERSITY, "MIT");
+        create_did_for_account(STUDENT);
+        create_did_for_account(VERIFIER);
+
+        let credential_hash = [1u8; 32];
+        let metadata: BoundedVec<u8, MaxMetadataSize> = 
+            b"Degree".to_vec().try_into().unwrap();
+
+        assert_ok!(Credential::issue_credential(
+            RuntimeOrigin::signed(UNIVERSITY),
+            STUDENT,
+            credential_hash,
+            CredentialType::Degree,
+            metadata,
+            None
+        ));
+
+        let credential_id = Credential::credential_by_hash(credential_hash).unwrap();
+
+        // Revoke credential
+        assert_ok!(Credential::revoke_credential(
+            RuntimeOrigin::signed(UNIVERSITY),
+            credential_id
+        ));
+
+        // Try to verify revoked credential
+        assert_noop!(
+            Credential::verify_credential(
+                RuntimeOrigin::signed(VERIFIER),
+                credential_hash
+            ),
+            Error::<Test>::CredentialNotActive
+        );
+    });
+}
+
+#[test]
+fn verify_credential_fails_if_expired() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        setup_verified_institution(UNIVERSITY, "MIT");
+        create_did_for_account(STUDENT);
+        create_did_for_account(VERIFIER);
+
+        let credential_hash = [1u8; 32];
+        let metadata: BoundedVec<u8, MaxMetadataSize> = 
+            b"Degree".to_vec().try_into().unwrap();
+
+        // Issue credential that expires at block 10
+        assert_ok!(Credential::issue_credential(
+            RuntimeOrigin::signed(UNIVERSITY),
+            STUDENT,
+            credential_hash,
+            CredentialType::Certificate,
+            metadata,
+            Some(10)
+        ));
+
+        // Move to block 11 (after expiration)
+        System::set_block_number(11);
+
+        // Try to verify expired credential
+        assert_noop!(
+            Credential::verify_credential(
+                RuntimeOrigin::signed(VERIFIER),
+                credential_hash
+            ),
+            Error::<Test>::CredentialExpired
+        );
+    });
+}
+
+#[test]
+fn verify_credential_fails_if_not_found() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        create_did_for_account(VERIFIER);
+
+        let fake_hash = [99u8; 32];
+
+        assert_noop!(
+            Credential::verify_credential(
+                RuntimeOrigin::signed(VERIFIER),
+                fake_hash
+            ),
+            Error::<Test>::CredentialNotFound
+        );
+    });
+}
+
+// ================== Update Metadata Tests ==================
+
+#[test]
+fn update_metadata_works() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        setup_verified_institution(UNIVERSITY, "MIT");
+        create_did_for_account(STUDENT);
+
+        let credential_hash = [1u8; 32];
+        let metadata: BoundedVec<u8, MaxMetadataSize> = 
+            b"Original Metadata".to_vec().try_into().unwrap();
+
+        assert_ok!(Credential::issue_credential(
+            RuntimeOrigin::signed(UNIVERSITY),
+            STUDENT,
+            credential_hash,
+            CredentialType::Degree,
+            metadata,
+            None
+        ));
+
+        let credential_id = Credential::credential_by_hash(credential_hash).unwrap();
+
+        // Update metadata
+        let new_metadata: BoundedVec<u8, MaxMetadataSize> = 
+            b"Updated Metadata".to_vec().try_into().unwrap();
+
+        assert_ok!(Credential::update_credential_metadata(
+            RuntimeOrigin::signed(UNIVERSITY),
+            credential_id,
+            new_metadata.clone()
+        ));
+
+        // Verify metadata was updated
+        let credential = Credential::credentials(credential_id).unwrap();
+        assert_eq!(credential.metadata, new_metadata);
+
+        // Check event
+        System::assert_last_event(
+            Event::CredentialMetadataUpdated {
+                credential_id,
+            }.into()
+        );
+    });
+}
+
+#[test]
+fn update_metadata_fails_if_not_issuer() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        setup_verified_institution(UNIVERSITY, "MIT");
+        create_did_for_account(STUDENT);
+
+        let credential_hash = [1u8; 32];
+        let metadata: BoundedVec<u8, MaxMetadataSize> = 
+            b"Degree".to_vec().try_into().unwrap();
+
+        assert_ok!(Credential::issue_credential(
+            RuntimeOrigin::signed(UNIVERSITY),
+            STUDENT,
+            credential_hash,
+            CredentialType::Degree,
+            metadata,
+            None
+        ));
+
+        let credential_id = Credential::credential_by_hash(credential_hash).unwrap();
+        let new_metadata: BoundedVec<u8, MaxMetadataSize> = 
+            b"Updated".to_vec().try_into().unwrap();
+
+        // Try to update as non-issuer
+        assert_noop!(
+            Credential::update_credential_metadata(
+                RuntimeOrigin::signed(STUDENT),
+                credential_id,
+                new_metadata
+            ),
+            Error::<Test>::NotAuthorized
+        );
+    });
+}
+
+#[test]
+fn update_metadata_fails_if_revoked() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        setup_verified_institution(UNIVERSITY, "MIT");
+        create_did_for_account(STUDENT);
+
+        let credential_hash = [1u8; 32];
+        let metadata: BoundedVec<u8, MaxMetadataSize> = 
+            b"Degree".to_vec().try_into().unwrap();
+
+        assert_ok!(Credential::issue_credential(
+            RuntimeOrigin::signed(UNIVERSITY),
+            STUDENT,
+            credential_hash,
+            CredentialType::Degree,
+            metadata,
+            None
+        ));
+
+        let credential_id = Credential::credential_by_hash(credential_hash).unwrap();
+
+        // Revoke credential
+        assert_ok!(Credential::revoke_credential(
+            RuntimeOrigin::signed(UNIVERSITY),
+            credential_id
+        ));
+
+        let new_metadata: BoundedVec<u8, MaxMetadataSize> = 
+            b"Updated".to_vec().try_into().unwrap();
+
+        // Try to update revoked credential
+        assert_noop!(
+            Credential::update_credential_metadata(
+                RuntimeOrigin::signed(UNIVERSITY),
+                credential_id,
+                new_metadata
+            ),
+            Error::<Test>::CredentialNotActive
+        );
+    });
+}
+
+// ================== Integration Tests ==================
+
+#[test]
+fn complete_credential_lifecycle() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        // Setup university and student
+        setup_verified_institution(UNIVERSITY, "Stanford University");
+        create_did_for_account(STUDENT);
+        create_did_for_account(VERIFIER);
+
+        // Issue credential
+        let credential_hash = [1u8; 32];
+        let metadata: BoundedVec<u8, MaxMetadataSize> = 
+            b"Bachelor of Science in Computer Science".to_vec().try_into().unwrap();
+
+        assert_ok!(Credential::issue_credential(
+            RuntimeOrigin::signed(UNIVERSITY),
+            STUDENT,
+            credential_hash,
+            CredentialType::Degree,
+            metadata,
+            Some(1000)
+        ));
+
+        let credential_id = Credential::credential_by_hash(credential_hash).unwrap();
+
+        // Verify credential is valid
+        assert_ok!(Credential::verify_credential(
+            RuntimeOrigin::signed(VERIFIER),
+            credential_hash
+        ));
+
+        // Update metadata
+        let new_metadata: BoundedVec<u8, MaxMetadataSize> = 
+            b"Bachelor of Science in Computer Science - Honors".to_vec().try_into().unwrap();
+        assert_ok!(Credential::update_credential_metadata(
+            RuntimeOrigin::signed(UNIVERSITY),
+            credential_id,
+            new_metadata
+        ));
+
+        // Verify still works after update
+        assert_ok!(Credential::verify_credential(
+            RuntimeOrigin::signed(VERIFIER),
+            credential_hash
+        ));
+
+        // Revoke credential
+        assert_ok!(Credential::revoke_credential(
+            RuntimeOrigin::signed(UNIVERSITY),
+            credential_id
+        ));
+
+        // Verification should fail after revocation
+        assert_noop!(
+            Credential::verify_credential(
+                RuntimeOrigin::signed(VERIFIER),
+                credential_hash
+            ),
+            Error::<Test>::CredentialNotActive
+        );
+    });
+}
+
+#[test]
+fn multiple_credentials_per_student() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        setup_verified_institution(UNIVERSITY, "MIT");
+        create_did_for_account(STUDENT);
+
+        // Issue bachelor's degree
+        let hash1 = [1u8; 32];
+        let metadata1: BoundedVec<u8, MaxMetadataSize> = 
+            b"Bachelor's Degree".to_vec().try_into().unwrap();
+        assert_ok!(Credential::issue_credential(
+            RuntimeOrigin::signed(UNIVERSITY),
+            STUDENT,
+            hash1,
+            CredentialType::Degree,
+            metadata1,
+            None
+        ));
+
+        // Issue master's degree
+        let hash2 = [2u8; 32];
+        let metadata2: BoundedVec<u8, MaxMetadataSize> = 
+            b"Master's Degree".to_vec().try_into().unwrap();
+        assert_ok!(Credential::issue_credential(
+            RuntimeOrigin::signed(UNIVERSITY),
+            STUDENT,
+            hash2,
+            CredentialType::MastersDegree,
+            metadata2,
+            None
+        ));
+
+        // Issue certificate
+        let hash3 = [3u8; 32];
+        let metadata3: BoundedVec<u8, MaxMetadataSize> = 
+            b"AI Certificate".to_vec().try_into().unwrap();
+        assert_ok!(Credential::issue_credential(
+            RuntimeOrigin::signed(UNIVERSITY),
+            STUDENT,
+            hash3,
+            CredentialType::Certificate,
+            metadata3,
+            None
+        ));
+
+        // Verify all credentials exist
+        assert!(Credential::credentials(Credential::credential_by_hash(hash1).unwrap()).is_some());
+        assert!(Credential::credentials(Credential::credential_by_hash(hash2).unwrap()).is_some());
+        assert!(Credential::credentials(Credential::credential_by_hash(hash3).unwrap()).is_some());
+
+        // Check holder index
+        let holder_credentials = Credential::credentials_by_holder(STUDENT);
+        assert_eq!(holder_credentials.len(), 3);
+    });
+}
+</file>
+
+<file path="credential/src/weights.rs">
+use frame::prelude::*;
+
+pub trait WeightInfo {
+    fn issue_credential() -> Weight;
+    fn revoke_credential() -> Weight;
+    fn verify_credential() -> Weight;
+    fn update_credential_metadata() -> Weight;
+}
+
+pub struct SubstrateWeight;
+
+impl WeightInfo for SubstrateWeight {
+    fn issue_credential() -> Weight {
+        Weight::from_parts(50_000_000, 0)
+    }
+    fn revoke_credential() -> Weight {
+        Weight::from_parts(30_000_000, 0)
+    }
+    fn verify_credential() -> Weight {
+        Weight::from_parts(20_000_000, 0)
+    }
+    fn update_credential_metadata() -> Weight {
+        Weight::from_parts(25_000_000, 0)
+    }
+}
+</file>
+
+<file path="credential/Cargo.toml">
+[package]
+name = "credential"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+
+[dependencies]
+codec = { features = ["derive"], workspace = true }
+scale-info = { features = ["derive"], workspace = true }
+frame = { features = ["experimental", "runtime"], workspace = true }
+
+# DID pallet dependency
+did = { path = "../did", default-features = false }
+
+[features]
+default = ["std"]
+std = [
+    "codec/std",
+    "scale-info/std",
+    "frame/std",
+    "did/std",
+]
+runtime-benchmarks = [
+    "frame/runtime-benchmarks",
+    "did/runtime-benchmarks",
+]
+try-runtime = [
+    "frame/try-runtime",
+    "did/try-runtime",
+]
+</file>
+
+<file path="did/src/benchmarking.rs">
+
+</file>
+
+<file path="did/src/lib.rs">
+#![cfg_attr(not(feature = "std"), no_std)]
+
+//! # DID Pallet
+//!
+//! ## Overview
+//! This pallet implements Decentralized Identifiers (DIDs) for academic verification.
+
+use frame::hashing;
+pub use pallet::*;
+
+#[cfg(test)]
+mod mock;
+
+#[cfg(test)]
+mod tests;
+
+#[cfg(feature = "runtime-benchmarks")]
+mod benchmarking;
+
+pub mod weights;
+pub use weights::*;
+
+#[frame::pallet]
+pub mod pallet {
+    use super::*;
+    use frame::prelude::*;
+
+    #[pallet::pallet]
+    pub struct Pallet<T>(_);
+
+    /// The pallet's configuration trait
+    #[pallet::config]
+    pub trait Config: frame_system::Config {
+        /// The overarching event type
+        type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
+
+        /// Maximum size of institution name or document metadata
+        #[pallet::constant]
+        type MaxDocumentSize: Get<u32>;
+
+        /// Maximum number of public keys per DID
+        #[pallet::constant]
+        type MaxPublicKeys: Get<u32>;
+
+        /// Weight information for extrinsics
+        type WeightInfo: WeightInfo;
+    }
+
+    //Events
+    #[pallet::event]
+    #[pallet::generate_deposit(pub(super) fn deposit_event)]
+    pub enum Event<T: Config> {
+        DidCreated {
+            owner: T::AccountId,
+        },
+        DidUpdated {
+            owner: T::AccountId,
+        },
+        DidDeactivated {
+            owner: T::AccountId,
+        },
+        PublicKeyAdded {
+            owner: T::AccountId,
+            key_id: [u8; 32],
+        },
+        PublicKeyRemoved {
+            owner: T::AccountId,
+            key_id: [u8; 32],
+        },
+        InstitutionRegistered {
+            did: T::AccountId,
+            name: BoundedVec<u8, T::MaxDocumentSize>,
+        },
+        InstitutionVerified {
+            did: T::AccountId,
+        },
+        InstitutionRevoked {
+            did: T::AccountId,
+        },
+    }
+
+    //Storage
+
+    #[derive(Clone, Encode, Decode, Eq, PartialEq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+    pub struct PublicKeyEntry {
+        pub key_id: [u8; 32],
+        pub key_type: KeyType,
+        pub public_key: [u8; 32],
+    }
+
+    #[derive(
+        Clone,
+        Copy,
+        Encode,
+        Decode,
+        DecodeWithMemTracking,
+        Eq,
+        PartialEq,
+        RuntimeDebug,
+        TypeInfo,
+        MaxEncodedLen,
+    )]
+    pub enum KeyType {
+        Ed25519,
+        Sr25519,
+        Ecdsa,
+    }
+
+    /// DID Document containing identity information
+    #[derive(Clone, Encode, Decode, Eq, PartialEq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+    #[scale_info(skip_type_params(T))]
+    pub struct DidDocument<T: Config> {
+        pub controller: T::AccountId,
+        pub public_keys: BoundedVec<PublicKeyEntry, T::MaxPublicKeys>,
+        pub created_at: BlockNumberFor<T>,
+        pub updated_at: BlockNumberFor<T>,
+        pub active: bool,
+    }
+
+    /// Institution registration information
+    #[derive(Clone, Encode, Decode, Eq, PartialEq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+    #[scale_info(skip_type_params(T))]
+    pub struct Institution<T: Config> {
+        pub name: BoundedVec<u8, T::MaxDocumentSize>,
+        pub did: T::AccountId,
+        pub verified: bool,
+        pub registered_at: BlockNumberFor<T>,
+    }
+
+    ///Storage of all DID documents, indexed by account ID
+    #[pallet::storage]
+    #[pallet::getter(fn did_documents)]
+    pub type DidDocuments<T: Config> =
+        StorageMap<_, Blake2_128Concat, T::AccountId, DidDocument<T>>;
+
+    /// Storage of institution registrations
+    #[pallet::storage]
+    #[pallet::getter(fn institutions)]
+    pub type Institutions<T: Config> =
+        StorageMap<_, Blake2_128Concat, T::AccountId, Institution<T>>;
+    //Errors
+    #[pallet::error]
+    pub enum Error<T> {
+        DidAlreadyExists,
+        DidNotFound,
+        NotAuthorized,
+        TooManyPublicKeys,
+        PublicKeyAlreadyExists,
+        PublicKeyNotFound,
+        InstitutionAlreadyRegistered,
+        InstitutionNotFound,
+        DidInactive,
+        InvalidInstitutionName,
+    }
+
+    #[pallet::call]
+    impl<T: Config> Pallet<T> {
+        /// Create a new DID with an initial public key
+        ///
+        /// # Arguments
+        /// * `origin` - The account creating the DID
+        /// * `public_key` - The initial public key to associate
+        /// * `key_type` - The type of the public key
+        ///
+        /// # Errors
+        /// * `DidAlreadyExists` - If a DID already exists for this account
+        /// * `TooManyPublicKeys` - Should not occur on creation with single key
+        #[pallet::call_index(0)]
+        #[pallet::weight(T::WeightInfo::create_did())]
+        pub fn create_did(
+            origin: OriginFor<T>,
+            public_key: [u8; 32],
+            key_type: KeyType,
+        ) -> DispatchResult {
+            let who = ensure_signed(origin)?;
+
+            ensure!(
+                !DidDocuments::<T>::contains_key(&who),
+                Error::<T>::DidAlreadyExists
+            );
+
+            let key_entry = PublicKeyEntry {
+                key_id: hashing::blake2_256(&public_key),
+                key_type,
+                public_key,
+            };
+
+            let mut public_keys = BoundedVec::new();
+            public_keys
+                .try_push(key_entry)
+                .map_err(|_| Error::<T>::TooManyPublicKeys)?;
+
+            let did_doc = DidDocument {
+                controller: who.clone(),
+                public_keys,
+                created_at: frame_system::Pallet::<T>::block_number(),
+                updated_at: frame_system::Pallet::<T>::block_number(),
+                active: true,
+            };
+
+            DidDocuments::<T>::insert(&who, did_doc);
+            Self::deposit_event(Event::DidCreated { owner: who });
+
+            Ok(())
+        }
+
+        #[pallet::call_index(1)]
+        #[pallet::weight(T::WeightInfo::add_public_key())]
+        pub fn add_public_key(
+            origin: OriginFor<T>,
+            public_key: [u8; 32],
+            key_type: KeyType,
+        ) -> DispatchResult {
+            let who = ensure_signed(origin)?;
+
+            DidDocuments::<T>::try_mutate(&who, |did_doc_opt| -> DispatchResult {
+                let did_doc = did_doc_opt.as_mut().ok_or(Error::<T>::DidNotFound)?;
+
+                ensure!(did_doc.controller == who, Error::<T>::NotAuthorized);
+                ensure!(did_doc.active, Error::<T>::DidInactive);
+
+                let key_id = hashing::blake2_256(&public_key);
+
+                ensure!(
+                    !did_doc.public_keys.iter().any(|k| k.key_id == key_id),
+                    Error::<T>::PublicKeyAlreadyExists
+                );
+
+                let key_entry = PublicKeyEntry {
+                    key_id,
+                    key_type,
+                    public_key,
+                };
+
+                did_doc
+                    .public_keys
+                    .try_push(key_entry)
+                    .map_err(|_| Error::<T>::TooManyPublicKeys)?;
+
+                did_doc.updated_at = frame_system::Pallet::<T>::block_number();
+
+                Self::deposit_event(Event::PublicKeyAdded {
+                    owner: who.clone(),
+                    key_id,
+                });
+
+                Ok(())
+            })
+        }
+
+        //Remove a public key from a DID
+        #[pallet::call_index(2)]
+        #[pallet::weight(T::WeightInfo::remove_public_key())]
+        pub fn remove_public_key(origin: OriginFor<T>, key_id: [u8; 32]) -> DispatchResult {
+            let who = ensure_signed(origin)?;
+
+            DidDocuments::<T>::try_mutate(&who, |did_doc_opt| -> DispatchResult {
+                let did_doc = did_doc_opt.as_mut().ok_or(Error::<T>::DidNotFound)?;
+
+                ensure!(did_doc.controller == who, Error::<T>::NotAuthorized);
+
+                let initial_len = did_doc.public_keys.len();
+                did_doc.public_keys.retain(|k| k.key_id != key_id);
+
+                ensure!(
+                    did_doc.public_keys.len() < initial_len,
+                    Error::<T>::PublicKeyNotFound
+                );
+
+                did_doc.updated_at = frame_system::Pallet::<T>::block_number();
+
+                Self::deposit_event(Event::PublicKeyRemoved {
+                    owner: who.clone(),
+                    key_id,
+                });
+
+                Ok(())
+            })
+        }
+
+        /// Deactivate a DID
+        #[pallet::call_index(3)]
+        #[pallet::weight(T::WeightInfo::deactivate_did())]
+        pub fn deactivate_did(origin: OriginFor<T>) -> DispatchResult {
+            let who = ensure_signed(origin)?;
+
+            DidDocuments::<T>::try_mutate(&who, |did_doc_opt| -> DispatchResult {
+                let did_doc = did_doc_opt.as_mut().ok_or(Error::<T>::DidNotFound)?;
+
+                ensure!(did_doc.controller == who, Error::<T>::NotAuthorized);
+
+                did_doc.active = false;
+                did_doc.updated_at = frame_system::Pallet::<T>::block_number();
+
+                Self::deposit_event(Event::DidDeactivated { owner: who.clone() });
+
+                Ok(())
+            })
+        }
+
+        /// Reactivate a deactivated DID
+        #[pallet::call_index(4)]
+        #[pallet::weight(T::WeightInfo::reactivate_did())]
+        pub fn reactivate_did(origin: OriginFor<T>) -> DispatchResult {
+            let who = ensure_signed(origin)?;
+
+            DidDocuments::<T>::try_mutate(&who, |did_doc_opt| -> DispatchResult {
+                let did_doc = did_doc_opt.as_mut().ok_or(Error::<T>::DidNotFound)?;
+
+                ensure!(did_doc.controller == who, Error::<T>::NotAuthorized);
+
+                did_doc.active = true;
+                did_doc.updated_at = frame_system::Pallet::<T>::block_number();
+
+                Self::deposit_event(Event::DidUpdated { owner: who.clone() });
+
+                Ok(())
+            })
+        }
+
+        /// Register as an academic institution
+        #[pallet::call_index(5)]
+        #[pallet::weight(T::WeightInfo::register_institution())]
+        pub fn register_institution(
+            origin: OriginFor<T>,
+            name: BoundedVec<u8, T::MaxDocumentSize>,
+        ) -> DispatchResult {
+            let who = ensure_signed(origin)?;
+
+            ensure!(
+                !Institutions::<T>::contains_key(&who),
+                Error::<T>::InstitutionAlreadyRegistered
+            );
+
+            ensure!(
+                DidDocuments::<T>::contains_key(&who),
+                Error::<T>::DidNotFound
+            );
+
+            ensure!(!name.is_empty(), Error::<T>::InvalidInstitutionName);
+
+            let institution = Institution {
+                name: name.clone(),
+                did: who.clone(),
+                verified: false,
+                registered_at: frame_system::Pallet::<T>::block_number(),
+            };
+
+            Institutions::<T>::insert(&who, institution);
+
+            Self::deposit_event(Event::InstitutionRegistered { did: who, name });
+
+            Ok(())
+        }
+
+        /// Verify an institution (governance/root only)
+        #[pallet::call_index(6)]
+        #[pallet::weight(T::WeightInfo::verify_institution())]
+        pub fn verify_institution(
+            origin: OriginFor<T>,
+            institution_did: T::AccountId,
+        ) -> DispatchResult {
+            ensure_root(origin)?;
+
+            Institutions::<T>::try_mutate(&institution_did, |institution_opt| -> DispatchResult {
+                let institution = institution_opt
+                    .as_mut()
+                    .ok_or(Error::<T>::InstitutionNotFound)?;
+
+                institution.verified = true;
+
+                Self::deposit_event(Event::InstitutionVerified {
+                    did: institution_did.clone(),
+                });
+
+                Ok(())
+            })
+        }
+
+        /// Revoke institution verification (governance/root only)
+        #[pallet::call_index(7)]
+        #[pallet::weight(T::WeightInfo::revoke_institution())]
+        pub fn revoke_institution(
+            origin: OriginFor<T>,
+            institution_did: T::AccountId,
+        ) -> DispatchResult {
+            ensure_root(origin)?;
+
+            Institutions::<T>::try_mutate(&institution_did, |institution_opt| -> DispatchResult {
+                let institution = institution_opt
+                    .as_mut()
+                    .ok_or(Error::<T>::InstitutionNotFound)?;
+
+                institution.verified = false;
+
+                Self::deposit_event(Event::InstitutionRevoked {
+                    did: institution_did.clone(),
+                });
+
+                Ok(())
+            })
+        }
+    }
+}
+</file>
+
+<file path="did/src/mock.rs">
+use crate as did;
+use frame::{prelude::*, runtime::prelude::*, testing_prelude::*};
+
+type Block = frame_system::mocking::MockBlock<Test>;
+
+// Configure a mock runtime to test the pallet
+#[frame_construct_runtime]
+mod runtime {
+    #[runtime::runtime]
+    #[runtime::derive(
+        RuntimeCall,
+        RuntimeEvent,
+        RuntimeError,
+        RuntimeOrigin,
+        RuntimeFreezeReason,
+        RuntimeHoldReason,
+        RuntimeSlashReason,
+        RuntimeLockId,
+        RuntimeTask
+    )]
+    pub struct Test;
+
+    #[runtime::pallet_index(0)]
+    pub type System = frame_system;
+
+    #[runtime::pallet_index(1)]
+    pub type Did = did;
+}
+
+// System pallet configuration
+#[derive_impl(frame_system::config_preludes::TestDefaultConfig)]
+impl frame_system::Config for Test {
+    type Block = Block;
+}
+
+// DID pallet configuration
+parameter_types! {
+    pub const MaxDocumentSize: u32 = 1024;
+    pub const MaxPublicKeys: u32 = 10;
+}
+
+impl did::Config for Test {
+    type RuntimeEvent = RuntimeEvent;
+    type MaxDocumentSize = MaxDocumentSize;
+    type MaxPublicKeys = MaxPublicKeys;
+    type WeightInfo = did::weights::SubstrateWeight;
+}
+
+// Test externalities initialization
+pub fn new_test_ext() -> TestExternalities {
+    frame_system::GenesisConfig::<Test>::default()
+        .build_storage()
+        .unwrap()
+        .into()
+}
+</file>
+
+<file path="did/src/tests.rs">
+use crate::{mock::*, DidDocuments, Error, Event, Institutions, KeyType};
+use frame::testing_prelude::*;
+
+//CREATE DID TESTS
+#[test]
+fn create_did_works() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+
+        let account = 1u64;
+        let public_key = [1u8; 32];
+
+        //Create a DID
+        assert_ok!(Did::create_did(
+            RuntimeOrigin::signed(account),
+            public_key,
+            KeyType::Ed25519
+        ));
+
+        assert!(DidDocuments::<Test>::contains_key(account));
+
+        System::assert_last_event(Event::DidCreated { owner: account }.into());
+    })
+}
+
+#[test]
+fn create_did_fails_if_already_exists() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+
+        let account = 1u64;
+        let public_key = [1u8; 32];
+
+        // Create first DID
+        assert_ok!(Did::create_did(
+            RuntimeOrigin::signed(account),
+            public_key,
+            KeyType::Ed25519
+        ));
+
+        // Try to create second DID for same account - should fail
+        assert_noop!(
+            Did::create_did(RuntimeOrigin::signed(account), [2u8; 32], KeyType::Sr25519),
+            Error::<Test>::DidAlreadyExists
+        );
+    });
+}
+
+#[test]
+fn create_did_stores_correct_data() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+
+        let account = 1u64;
+        let public_key = [1u8; 32];
+
+        assert_ok!(Did::create_did(
+            RuntimeOrigin::signed(account),
+            public_key,
+            KeyType::Ed25519
+        ));
+
+        // Verify stored data
+        let did_doc = DidDocuments::<Test>::get(account).unwrap();
+        assert_eq!(did_doc.controller, account);
+        assert_eq!(did_doc.public_keys.len(), 1);
+        assert_eq!(did_doc.public_keys[0].public_key, public_key);
+        assert_eq!(did_doc.public_keys[0].key_type, KeyType::Ed25519);
+        assert_eq!(did_doc.active, true);
+        assert_eq!(did_doc.created_at, 1);
+        assert_eq!(did_doc.updated_at, 1);
+    });
+}
+
+#[test]
+fn add_public_key_works() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+
+        let account = 1u64;
+        let first_key = [1u8; 32];
+        let second_key = [2u8; 32];
+
+        // Create DID
+        assert_ok!(Did::create_did(
+            RuntimeOrigin::signed(account),
+            first_key,
+            KeyType::Ed25519
+        ));
+
+        System::set_block_number(2);
+
+        // Add second key
+        assert_ok!(Did::add_public_key(
+            RuntimeOrigin::signed(account),
+            second_key,
+            KeyType::Sr25519
+        ));
+
+        // Verify key was added
+        let did_doc = DidDocuments::<Test>::get(account).unwrap();
+        assert_eq!(did_doc.public_keys.len(), 2);
+        assert_eq!(did_doc.updated_at, 2);
+    });
+}
+
+#[test]
+fn add_public_key_fails_if_did_not_found() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+
+        let account = 1u64;
+        let public_key = [1u8; 32];
+
+        // Try to add key without creating DID first
+        assert_noop!(
+            Did::add_public_key(RuntimeOrigin::signed(account), public_key, KeyType::Ed25519),
+            Error::<Test>::DidNotFound
+        );
+    });
+}
+
+#[test]
+fn add_public_key_fails_if_not_authorized() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+
+        let owner = 1u64;
+        let attacker = 2u64;
+        let public_key = [1u8; 32];
+
+        // Create DID with owner
+        assert_ok!(Did::create_did(
+            RuntimeOrigin::signed(owner),
+            public_key,
+            KeyType::Ed25519
+        ));
+
+        // Create DID for attacker as well
+        assert_ok!(Did::create_did(
+            RuntimeOrigin::signed(attacker),
+            [3u8; 32],
+            KeyType::Ed25519
+        ));
+
+        // Manually modify the attacker's DID to point to owner's DID
+        // This simulates an authorization attack scenario
+        DidDocuments::<Test>::mutate(attacker, |did_doc_opt| {
+            if let Some(did_doc) = did_doc_opt {
+                // Change controller to owner but keep the DID under attacker's account
+                did_doc.controller = owner;
+            }
+        });
+
+        // Now try to add key - attacker has a DID but is not the controller
+        assert_noop!(
+            Did::add_public_key(RuntimeOrigin::signed(attacker), [2u8; 32], KeyType::Sr25519),
+            Error::<Test>::NotAuthorized
+        );
+    });
+}
+
+#[test]
+fn add_public_key_fails_if_did_inactive() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+
+        let account = 1u64;
+        let public_key = [1u8; 32];
+
+        // Create and deactivate DID
+        assert_ok!(Did::create_did(
+            RuntimeOrigin::signed(account),
+            public_key,
+            KeyType::Ed25519
+        ));
+
+        assert_ok!(Did::deactivate_did(RuntimeOrigin::signed(account)));
+
+        // Try to add key to inactive DID
+        assert_noop!(
+            Did::add_public_key(RuntimeOrigin::signed(account), [2u8; 32], KeyType::Sr25519),
+            Error::<Test>::DidInactive
+        );
+    });
+}
+
+#[test]
+fn add_public_key_fails_if_key_already_exists() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+
+        let account = 1u64;
+        let public_key = [1u8; 32];
+
+        // Create DID
+        assert_ok!(Did::create_did(
+            RuntimeOrigin::signed(account),
+            public_key,
+            KeyType::Ed25519
+        ));
+
+        // Try to add same key again
+        assert_noop!(
+            Did::add_public_key(RuntimeOrigin::signed(account), public_key, KeyType::Ed25519),
+            Error::<Test>::PublicKeyAlreadyExists
+        );
+    });
+}
+
+#[test]
+fn add_public_key_fails_if_max_keys_reached() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+
+        let account = 1u64;
+
+        // Create DID with first key
+        assert_ok!(Did::create_did(
+            RuntimeOrigin::signed(account),
+            [1u8; 32],
+            KeyType::Ed25519
+        ));
+
+        // Add keys up to the limit (MaxPublicKeys = 10, already have 1)
+        for i in 2u8..=10u8 {
+            assert_ok!(Did::add_public_key(
+                RuntimeOrigin::signed(account),
+                [i; 32],
+                KeyType::Ed25519
+            ));
+        }
+
+        // Try to add one more key - should fail
+        assert_noop!(
+            Did::add_public_key(RuntimeOrigin::signed(account), [11u8; 32], KeyType::Ed25519),
+            Error::<Test>::TooManyPublicKeys
+        );
+    });
+}
+
+// ============================================================
+// DEACTIVATE/REACTIVATE DID TESTS
+// ============================================================
+
+#[test]
+fn deactivate_did_works() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+
+        let account = 1u64;
+        let public_key = [1u8; 32];
+
+        // Create DID
+        assert_ok!(Did::create_did(
+            RuntimeOrigin::signed(account),
+            public_key,
+            KeyType::Ed25519
+        ));
+
+        System::set_block_number(2);
+
+        // Deactivate DID
+        assert_ok!(Did::deactivate_did(RuntimeOrigin::signed(account)));
+
+        // Verify DID is inactive
+        let did_doc = DidDocuments::<Test>::get(account).unwrap();
+        assert_eq!(did_doc.active, false);
+        assert_eq!(did_doc.updated_at, 2);
+
+        // Verify event
+        System::assert_last_event(Event::DidDeactivated { owner: account }.into());
+    });
+}
+
+#[test]
+fn reactivate_did_works() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+
+        let account = 1u64;
+        let public_key = [1u8; 32];
+
+        // Create and deactivate DID
+        assert_ok!(Did::create_did(
+            RuntimeOrigin::signed(account),
+            public_key,
+            KeyType::Ed25519
+        ));
+
+        assert_ok!(Did::deactivate_did(RuntimeOrigin::signed(account)));
+
+        System::set_block_number(2);
+
+        // Reactivate DID
+        assert_ok!(Did::reactivate_did(RuntimeOrigin::signed(account)));
+
+        // Verify DID is active again
+        let did_doc = DidDocuments::<Test>::get(account).unwrap();
+        assert_eq!(did_doc.active, true);
+        assert_eq!(did_doc.updated_at, 2);
+    });
+}
+
+// ============================================================
+// INSTITUTION TESTS
+// ============================================================
+
+#[test]
+fn register_institution_works() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+
+        let account = 1u64;
+        let public_key = [1u8; 32];
+
+        // Create DID first
+        assert_ok!(Did::create_did(
+            RuntimeOrigin::signed(account),
+            public_key,
+            KeyType::Ed25519
+        ));
+
+        // Register as institution
+        let name = b"Harvard University".to_vec();
+        let bounded_name = name.clone().try_into().unwrap();
+
+        assert_ok!(Did::register_institution(
+            RuntimeOrigin::signed(account),
+            bounded_name
+        ));
+
+        // Verify institution was registered
+        assert!(Institutions::<Test>::contains_key(account));
+
+        let institution = Institutions::<Test>::get(account).unwrap();
+        assert_eq!(institution.did, account);
+        assert_eq!(institution.verified, false);
+        assert_eq!(institution.name.to_vec(), name);
+    });
+}
+
+#[test]
+fn register_institution_fails_without_did() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+
+        let account = 1u64;
+        let name = b"Harvard University".to_vec();
+        let bounded_name = name.try_into().unwrap();
+
+        // Try to register without DID
+        assert_noop!(
+            Did::register_institution(RuntimeOrigin::signed(account), bounded_name),
+            Error::<Test>::DidNotFound
+        );
+    });
+}
+
+#[test]
+fn register_institution_fails_if_already_registered() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+
+        let account = 1u64;
+        let public_key = [1u8; 32];
+
+        // Create DID and register
+        assert_ok!(Did::create_did(
+            RuntimeOrigin::signed(account),
+            public_key,
+            KeyType::Ed25519
+        ));
+
+        let name = b"Harvard University".to_vec();
+        let bounded_name = name.clone().try_into().unwrap();
+
+        assert_ok!(Did::register_institution(
+            RuntimeOrigin::signed(account),
+            bounded_name
+        ));
+
+        // Try to register again
+        let bounded_name2 = name.try_into().unwrap();
+        assert_noop!(
+            Did::register_institution(RuntimeOrigin::signed(account), bounded_name2),
+            Error::<Test>::InstitutionAlreadyRegistered
+        );
+    });
+}
+
+#[test]
+fn register_institution_fails_with_empty_name() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+
+        let account = 1u64;
+        let public_key = [1u8; 32];
+
+        // Create DID
+        assert_ok!(Did::create_did(
+            RuntimeOrigin::signed(account),
+            public_key,
+            KeyType::Ed25519
+        ));
+
+        // Try to register with empty name
+        let empty_name = vec![].try_into().unwrap();
+        assert_noop!(
+            Did::register_institution(RuntimeOrigin::signed(account), empty_name),
+            Error::<Test>::InvalidInstitutionName
+        );
+    });
+}
+
+#[test]
+fn verify_institution_works() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+
+        let account = 1u64;
+        let public_key = [1u8; 32];
+
+        // Create DID and register institution
+        assert_ok!(Did::create_did(
+            RuntimeOrigin::signed(account),
+            public_key,
+            KeyType::Ed25519
+        ));
+
+        let name = b"Harvard University".to_vec().try_into().unwrap();
+        assert_ok!(Did::register_institution(
+            RuntimeOrigin::signed(account),
+            name
+        ));
+
+        // Verify institution (requires root)
+        assert_ok!(Did::verify_institution(RuntimeOrigin::root(), account));
+
+        // Check verification status
+        let institution = Institutions::<Test>::get(account).unwrap();
+        assert_eq!(institution.verified, true);
+
+        // Verify event
+        System::assert_last_event(Event::InstitutionVerified { did: account }.into());
+    });
+}
+
+#[test]
+fn verify_institution_fails_for_non_root() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+
+        let account = 1u64;
+        let public_key = [1u8; 32];
+
+        // Create DID and register institution
+        assert_ok!(Did::create_did(
+            RuntimeOrigin::signed(account),
+            public_key,
+            KeyType::Ed25519
+        ));
+
+        let name = b"Harvard University".to_vec().try_into().unwrap();
+        assert_ok!(Did::register_institution(
+            RuntimeOrigin::signed(account),
+            name
+        ));
+
+        // Try to verify from non-root account
+        assert_noop!(
+            Did::verify_institution(RuntimeOrigin::signed(account), account),
+            DispatchError::BadOrigin
+        );
+    });
+}
+
+#[test]
+fn revoke_institution_works() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+
+        let account = 1u64;
+        let public_key = [1u8; 32];
+
+        // Create DID, register and verify institution
+        assert_ok!(Did::create_did(
+            RuntimeOrigin::signed(account),
+            public_key,
+            KeyType::Ed25519
+        ));
+
+        let name = b"Harvard University".to_vec().try_into().unwrap();
+        assert_ok!(Did::register_institution(
+            RuntimeOrigin::signed(account),
+            name
+        ));
+
+        assert_ok!(Did::verify_institution(RuntimeOrigin::root(), account));
+
+        // Revoke verification
+        assert_ok!(Did::revoke_institution(RuntimeOrigin::root(), account));
+
+        // Check verification status
+        let institution = Institutions::<Test>::get(account).unwrap();
+        assert_eq!(institution.verified, false);
+
+        // Verify event
+        System::assert_last_event(Event::InstitutionRevoked { did: account }.into());
+    });
+}
+
+#[test]
+fn revoke_institution_fails_for_non_root() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+
+        let account = 1u64;
+        let public_key = [1u8; 32];
+
+        // Create DID, register and verify institution
+        assert_ok!(Did::create_did(
+            RuntimeOrigin::signed(account),
+            public_key,
+            KeyType::Ed25519
+        ));
+
+        let name = b"Harvard University".to_vec().try_into().unwrap();
+        assert_ok!(Did::register_institution(
+            RuntimeOrigin::signed(account),
+            name
+        ));
+
+        assert_ok!(Did::verify_institution(RuntimeOrigin::root(), account));
+
+        // Try to revoke from non-root account
+        assert_noop!(
+            Did::revoke_institution(RuntimeOrigin::signed(account), account),
+            DispatchError::BadOrigin
+        );
+    });
+}
+
+#[test]
+fn revoke_institution_fails_if_not_found() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+
+        let account = 1u64;
+
+        // Try to revoke non-existent institution
+        assert_noop!(
+            Did::revoke_institution(RuntimeOrigin::root(), account),
+            Error::<Test>::InstitutionNotFound
+        );
+    });
+}
+
+// ============================================================
+// INTEGRATION TESTS
+// ============================================================
+
+#[test]
+fn complete_did_lifecycle() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+
+        let account = 1u64;
+
+        // 1. Create DID
+        assert_ok!(Did::create_did(
+            RuntimeOrigin::signed(account),
+            [1u8; 32],
+            KeyType::Ed25519
+        ));
+
+        // 2. Add multiple keys
+        assert_ok!(Did::add_public_key(
+            RuntimeOrigin::signed(account),
+            [2u8; 32],
+            KeyType::Sr25519
+        ));
+
+        assert_ok!(Did::add_public_key(
+            RuntimeOrigin::signed(account),
+            [3u8; 32],
+            KeyType::Ecdsa
+        ));
+
+        // 3. Register as institution
+        let name = b"MIT".to_vec().try_into().unwrap();
+        assert_ok!(Did::register_institution(
+            RuntimeOrigin::signed(account),
+            name
+        ));
+
+        // 4. Verify institution
+        assert_ok!(Did::verify_institution(RuntimeOrigin::root(), account));
+
+        // 5. Deactivate DID
+        assert_ok!(Did::deactivate_did(RuntimeOrigin::signed(account)));
+
+        // 6. Reactivate DID
+        assert_ok!(Did::reactivate_did(RuntimeOrigin::signed(account)));
+
+        // Verify final state
+        let did_doc = DidDocuments::<Test>::get(account).unwrap();
+        assert_eq!(did_doc.public_keys.len(), 3);
+        assert_eq!(did_doc.active, true);
+
+        let institution = Institutions::<Test>::get(account).unwrap();
+        assert_eq!(institution.verified, true);
+    });
+}
+</file>
+
+<file path="did/src/weights.rs">
+// pallets/did/src/weights.rs
+use frame::prelude::*;
+
+pub trait WeightInfo {
+    fn create_did() -> Weight;
+    fn add_public_key() -> Weight;
+    fn remove_public_key() -> Weight;
+    fn deactivate_did() -> Weight;
+    fn reactivate_did() -> Weight;
+    fn register_institution() -> Weight;
+    fn verify_institution() -> Weight;
+    fn revoke_institution() -> Weight;
+}
+
+pub struct SubstrateWeight;
+
+impl WeightInfo for SubstrateWeight {
+    fn create_did() -> Weight {
+        Weight::from_parts(10_000_000, 0)
+    }
+    fn add_public_key() -> Weight {
+        Weight::from_parts(15_000_000, 0)
+    }
+    fn remove_public_key() -> Weight {
+        Weight::from_parts(12_000_000, 0)
+    }
+    fn deactivate_did() -> Weight {
+        Weight::from_parts(10_000_000, 0)
+    }
+    fn reactivate_did() -> Weight {
+        Weight::from_parts(10_000_000, 0)
+    }
+    fn register_institution() -> Weight {
+        Weight::from_parts(15_000_000, 0)
+    }
+    fn verify_institution() -> Weight {
+        Weight::from_parts(10_000_000, 0)
+    }
+    fn revoke_institution() -> Weight {
+        Weight::from_parts(10_000_000, 0)
+    }
+}
+</file>
+
+<file path="did/Cargo.toml">
+[package]
+name = "did"
+version = "0.1.0"
+license.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+edition.workspace = true
+
+[dependencies]
+codec = { features = ["derive"], workspace = true }
+scale-info = { features = ["derive"], workspace = true }
+frame = { features = ["experimental", "runtime"], workspace = true }
+
+[features]
+default = ["std"]
+std = ["codec/std", "frame/std", "scale-info/std"]
+runtime-benchmarks = ["frame/runtime-benchmarks"]
+try-runtime = ["frame/try-runtime"]
+</file>
+
+<file path="reputation/src/benchmarking.rs">
+
+</file>
+
+<file path="reputation/src/lib.rs">
+#![cfg_attr(not(feature = "std"), no_std)]
+//! # Reputation Pallet
+//! 
+//! Track reputation and endorsements for academic institutions
+
+pub use pallet::*;
+
+#[cfg(test)]
+mod mock;
+
+#[cfg(test)]
+mod tests;
+
+pub mod weights;
+pub use weights::WeightInfo;
+
+#[frame::pallet]
+pub mod pallet {
+    use frame::prelude::*;
+    use crate::WeightInfo;
+
+    #[pallet::pallet]
+    pub struct Pallet<T>(_);
+
+    #[derive(Clone, Encode, Decode, Eq, PartialEq, RuntimeDebug, TypeInfo, MaxEncodedLen, DecodeWithMemTracking)]
+    pub enum EndorsementType {
+        /// General professional endorsement
+        Professional,
+        /// Academic excellence endorsement
+        Academic,
+        /// Research contribution endorsement
+        Research,
+        /// Teaching quality endorsement
+        Teaching,
+        /// Innovation endorsement
+        Innovation,
+    }
+
+    /// Reputation score breakdown
+    #[derive(Clone, Encode, Decode, Eq, PartialEq, RuntimeDebug, TypeInfo, MaxEncodedLen, Default)]
+    pub struct ReputationScore {
+        /// Total credentials issued
+        pub credentials_issued: u32,
+        /// Total credentials verified
+        pub credentials_verified: u32,
+        /// Number of endorsements received
+        pub endorsements_received: u32,
+        /// Number of endorsements given
+        pub endorsements_given: u32,
+        /// Overall reputation score (0-1000)
+        pub total_score: u32,
+    }
+
+    /// Individual endorsement record
+    #[derive(Clone, Encode, Decode, Eq, PartialEq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+    #[scale_info(skip_type_params(T))]
+    pub struct Endorsement<T: Config> {
+        /// Who gave the endorsement
+        pub endorser: T::AccountId,
+        /// Who received the endorsement
+        pub endorsee: T::AccountId,
+        /// Type of endorsement
+        pub endorsement_type: EndorsementType,
+        /// Optional comment
+        pub comment: BoundedVec<u8, ConstU32<256>>,
+        /// When it was given
+        pub created_at: BlockNumberFor<T>,
+        /// Weight/strength of endorsement (1-10)
+        pub weight: u8,
+    }
+
+
+    #[pallet::config]
+    pub trait Config: frame_system::Config + did::Config + credential::Config {
+
+        type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
+
+        #[pallet::constant]
+        type MaxEndorsements: Get<u32>;
+
+        #[pallet::constant]
+        type MaxCommentSize: Get<u32>;
+
+        type WeightInfo: WeightInfo;
+    }
+
+    #[pallet::event]
+    #[pallet::generate_deposit(pub(super) fn deposit_event)]
+    pub enum Event<T: Config> {
+        EndorsementCreated {
+            endorser: T::AccountId,
+            endorsee: T::AccountId,
+            endorsement_type: EndorsementType,
+            weight: u8,
+        },
+        EndorsementRemoved {
+            endorser: T::AccountId,
+            endorsee: T::AccountId,
+        },
+        ReputationUpdated {
+            account: T::AccountId,
+            new_score: u32,
+        },
+        CredentialIssuanceRecorded {
+            issuer: T::AccountId,
+        },
+        CredentialVerificationRecorded {
+            verifier: T::AccountId,
+        }
+    }
+
+    // ================== Errors ==================
+
+    #[pallet::error]
+    pub enum Error<T> {
+        /// Account has no DID
+        NoDid,
+        /// DID is not active
+        DidNotActive,
+        /// Already endorsed this account
+        AlreadyEndorsed,
+        /// Cannot endorse yourself
+        CannotEndorseSelf,
+        /// Too many endorsements
+        TooManyEndorsements,
+        /// Endorsement not found
+        EndorsementNotFound,
+        /// Invalid endorsement weight (must be 1-10)
+        InvalidWeight,
+        /// Comment too large
+        CommentTooLarge,
+        /// Account is not a verified institution
+        NotVerifiedInstitution,
+    }
+
+
+    /// Reputation scores for each account
+    #[pallet::storage]
+    #[pallet::getter(fn reputation_scores)]
+    pub type ReputationScores<T: Config> = StorageMap<
+        _,
+        Blake2_128Concat,
+        T::AccountId,
+        ReputationScore,
+        ValueQuery,
+    >;
+
+    /// Endorsements given by an account
+    #[pallet::storage]
+    #[pallet::getter(fn endorsements_given)]
+    pub type EndorsementsGiven<T: Config> = StorageMap<
+        _,
+        Blake2_128Concat,
+        T::AccountId,
+        BoundedVec<Endorsement<T>, T::MaxEndorsements>,
+        ValueQuery,
+    >;
+
+    /// Endorsements received by an account
+    #[pallet::storage]
+    #[pallet::getter(fn endorsements_received)]
+    pub type EndorsementsReceived<T: Config> = StorageMap<
+        _,
+        Blake2_128Concat,
+        T::AccountId,
+        BoundedVec<Endorsement<T>, T::MaxEndorsements>,
+        ValueQuery,
+    >;
+
+    /// Track if one account has already endorsed another
+    #[pallet::storage]
+    #[pallet::getter(fn has_endorsed)]
+    pub type HasEndorsed<T: Config> = StorageDoubleMap<
+        _,
+        Blake2_128Concat,
+        T::AccountId, // endorser
+        Blake2_128Concat,
+        T::AccountId, // endorsee
+        bool,
+        ValueQuery,
+    >;
+    // ================== Dispatchable Functions ==================
+
+    #[pallet::call]
+    impl<T: Config> Pallet<T> {
+        /// Create an endorsement for another account
+        ///
+        /// # Arguments
+        /// * `origin` - Must have an active DID
+        /// * `endorsee` - Account to endorse
+        /// * `endorsement_type` - Type of endorsement
+        /// * `comment` - Optional comment
+        /// * `weight` - Strength of endorsement (1-10)
+        #[pallet::call_index(0)]
+        #[pallet::weight(<T as Config>::WeightInfo::endorse())]
+
+        pub fn endorse(
+            origin: OriginFor<T>,
+            endorsee: T::AccountId,
+            endorsement_type: EndorsementType,
+            comment: BoundedVec<u8, ConstU32<256>>,
+            weight: u8,
+        ) -> DispatchResult {
+            let endorser = ensure_signed(origin)?;
+
+            // Validate comment size
+            ensure!(
+                comment.len() <= T::MaxCommentSize::get() as usize,
+                Error::<T>::CommentTooLarge
+            );
+
+            // Cannot endorse yourself
+            ensure!(endorser != endorsee, Error::<T>::CannotEndorseSelf);
+
+            // Validate weight (1-10)
+            ensure!(weight >= 1 && weight <= 10, Error::<T>::InvalidWeight);
+
+            // Check endorser has active DID
+            let endorser_did = did::DidDocuments::<T>::get(&endorser)
+                .ok_or(Error::<T>::NoDid)?;
+            ensure!(endorser_did.active, Error::<T>::DidNotActive);
+
+            // Check endorsee has active DID
+            let endorsee_did = did::DidDocuments::<T>::get(&endorsee)
+                .ok_or(Error::<T>::NoDid)?;
+            ensure!(endorsee_did.active, Error::<T>::DidNotActive);
+
+            // Check if already endorsed
+            ensure!(
+                !HasEndorsed::<T>::get(&endorser, &endorsee),
+                Error::<T>::AlreadyEndorsed
+            );
+
+            // Create endorsement
+            let endorsement = Endorsement {
+                endorser: endorser.clone(),
+                endorsee: endorsee.clone(),
+                endorsement_type: endorsement_type.clone(),
+                comment,
+                created_at: frame_system::Pallet::<T>::block_number(),
+                weight,
+            };
+
+            // Add to endorser's given list
+            EndorsementsGiven::<T>::try_mutate(&endorser, |endorsements| -> DispatchResult {
+                endorsements.try_push(endorsement.clone())
+                    .map_err(|_| Error::<T>::TooManyEndorsements)?;
+                Ok(())
+            })?;
+
+            // Add to endorsee's received list
+            EndorsementsReceived::<T>::try_mutate(&endorsee, |endorsements| -> DispatchResult {
+                endorsements.try_push(endorsement)
+                    .map_err(|_| Error::<T>::TooManyEndorsements)?;
+                Ok(())
+            })?;
+
+            // Mark as endorsed
+            HasEndorsed::<T>::insert(&endorser, &endorsee, true);
+
+            // Update reputation scores
+            ReputationScores::<T>::mutate(&endorser, |score| {
+                score.endorsements_given = score.endorsements_given.saturating_add(1);
+            });
+
+            ReputationScores::<T>::mutate(&endorsee, |score| {
+                score.endorsements_received = score.endorsements_received.saturating_add(1);
+                // Recalculate total score
+                score.total_score = Self::calculate_reputation_score(&score);
+            });
+
+            Self::deposit_event(Event::EndorsementCreated {
+                endorser,
+                endorsee,
+                endorsement_type,
+                weight,
+            });
+
+            Ok(())
+        }
+
+        /// Remove an endorsement you previously gave
+        ///
+        /// # Arguments
+        /// * `origin` - Must be the endorser
+        /// * `endorsee` - Account that was endorsed
+        #[pallet::call_index(1)]
+        #[pallet::weight(<T as Config>::WeightInfo::remove_endorsement())]
+        pub fn remove_endorsement(
+            origin: OriginFor<T>,
+            endorsee: T::AccountId,
+        ) -> DispatchResult {
+            let endorser = ensure_signed(origin)?;
+
+            // Check if endorsement exists
+            ensure!(
+                HasEndorsed::<T>::get(&endorser, &endorsee),
+                Error::<T>::EndorsementNotFound
+            );
+
+            // Remove from endorser's given list
+            EndorsementsGiven::<T>::mutate(&endorser, |endorsements| {
+                endorsements.retain(|e| e.endorsee != endorsee);
+            });
+
+            // Remove from endorsee's received list
+            EndorsementsReceived::<T>::mutate(&endorsee, |endorsements| {
+                endorsements.retain(|e| e.endorser != endorser);
+            });
+
+            // Remove endorsement flag
+            HasEndorsed::<T>::remove(&endorser, &endorsee);
+
+            // Update reputation scores
+            ReputationScores::<T>::mutate(&endorser, |score| {
+                score.endorsements_given = score.endorsements_given.saturating_sub(1);
+            });
+
+            ReputationScores::<T>::mutate(&endorsee, |score| {
+                score.endorsements_received = score.endorsements_received.saturating_sub(1);
+                score.total_score = Self::calculate_reputation_score(&score);
+            });
+
+            Self::deposit_event(Event::EndorsementRemoved {
+                endorser,
+                endorsee,
+            });
+
+            Ok(())
+        }
+
+        /// Record that an institution issued a credential
+        /// This should be called by the credential pallet
+        ///
+        /// # Arguments
+        /// * `origin` - Root origin (called by credential pallet)
+        /// * `issuer` - The institution that issued the credential
+        #[pallet::call_index(2)]
+        #[pallet::weight(<T as Config>::WeightInfo::update_reputation_score())]
+        pub fn record_credential_issuance(
+            origin: OriginFor<T>,
+            issuer: T::AccountId,
+        ) -> DispatchResult {
+            ensure_root(origin)?;
+
+            // Update issuer's reputation
+            ReputationScores::<T>::mutate(&issuer, |score| {
+                score.credentials_issued = score.credentials_issued.saturating_add(1);
+                score.total_score = Self::calculate_reputation_score(&score);
+            });
+
+            Self::deposit_event(Event::CredentialIssuanceRecorded {
+                issuer: issuer.clone(),
+            });
+
+            let new_score = ReputationScores::<T>::get(&issuer).total_score;
+            Self::deposit_event(Event::ReputationUpdated {
+                account: issuer,
+                new_score,
+            });
+
+            Ok(())
+        }
+
+        /// Record that someone verified a credential
+        /// This can be called by anyone or the credential pallet
+        ///
+        /// # Arguments
+        /// * `origin` - The account that verified a credential
+        #[pallet::call_index(3)]
+        #[pallet::weight(<T as Config>::WeightInfo::update_reputation_score())]
+        pub fn record_credential_verification(
+            origin: OriginFor<T>,
+        ) -> DispatchResult {
+            let verifier = ensure_signed(origin)?;
+
+            // Update verifier's reputation
+            ReputationScores::<T>::mutate(&verifier, |score| {
+                score.credentials_verified = score.credentials_verified.saturating_add(1);
+                score.total_score = Self::calculate_reputation_score(&score);
+            });
+
+            Self::deposit_event(Event::CredentialVerificationRecorded {
+                verifier: verifier.clone(),
+            });
+
+            let new_score = ReputationScores::<T>::get(&verifier).total_score;
+            Self::deposit_event(Event::ReputationUpdated {
+                account: verifier,
+                new_score,
+            });
+
+            Ok(())
+        }
+
+        /// Manually update reputation score (for admin/governance)
+        ///
+        /// # Arguments
+        /// * `origin` - Root origin
+        /// * `account` - Account to update
+        #[pallet::call_index(4)]
+        #[pallet::weight(<T as Config>::WeightInfo::update_reputation_score())]
+        pub fn update_reputation_score(
+            origin: OriginFor<T>,
+            account: T::AccountId,
+        ) -> DispatchResult {
+            ensure_root(origin)?;
+
+            ReputationScores::<T>::mutate(&account, |score| {
+                score.total_score = Self::calculate_reputation_score(&score);
+            });
+
+            let new_score = ReputationScores::<T>::get(&account).total_score;
+            Self::deposit_event(Event::ReputationUpdated {
+                account,
+                new_score,
+            });
+
+            Ok(())
+        }
+    }
+
+    // ================== Helper Functions ==================
+
+    impl<T: Config> Pallet<T> {
+        /// Calculate total reputation score
+        fn calculate_reputation_score(score: &ReputationScore) -> u32 {
+            let credentials_score = score.credentials_issued.saturating_mul(10);
+            let verification_score = score.credentials_verified.saturating_mul(5);
+            let endorsement_score = score.endorsements_received.saturating_mul(20);
+            
+            credentials_score
+                .saturating_add(verification_score)
+                .saturating_add(endorsement_score)
+                .min(1000) // Cap at 1000
+        }
+    }
+
+}
+</file>
+
+<file path="reputation/src/mock.rs">
+use crate as reputation;
+use frame::prelude::*;
+use frame::testing_prelude::*;
+
+type Block = frame_system::mocking::MockBlock<Test>;
+
+// Configure a mock runtime to test the pallet
+#[frame_construct_runtime]
+mod runtime {
+    #[runtime::runtime]
+    #[runtime::derive(
+        RuntimeCall,
+        RuntimeEvent,
+        RuntimeError,
+        RuntimeOrigin,
+        RuntimeFreezeReason,
+        RuntimeHoldReason,
+        RuntimeSlashReason,
+        RuntimeLockId,
+        RuntimeTask
+    )]
+    pub struct Test;
+
+    #[runtime::pallet_index(0)]
+    pub type System = frame_system;
+
+    #[runtime::pallet_index(1)]
+    pub type Did = did;
+
+    #[runtime::pallet_index(2)]
+    pub type Credential = credential;
+
+    #[runtime::pallet_index(3)]
+    pub type Reputation = reputation;
+}
+
+// System pallet configuration
+#[derive_impl(frame_system::config_preludes::TestDefaultConfig)]
+impl frame_system::Config for Test {
+    type Block = Block;
+}
+
+// DID pallet configuration
+parameter_types! {
+    pub const MaxDocumentSize: u32 = 1024;
+    pub const MaxPublicKeys: u32 = 10;
+}
+
+impl did::Config for Test {
+    type RuntimeEvent = RuntimeEvent;
+    type MaxDocumentSize = MaxDocumentSize;
+    type MaxPublicKeys = MaxPublicKeys;
+    type WeightInfo = did::weights::SubstrateWeight;
+}
+
+// Credential pallet configuration
+parameter_types! {
+    pub const MaxMetadataSize: u32 = 512;
+    pub const MaxCredentialsPerHolder: u32 = 100;
+}
+
+impl credential::Config for Test {
+    type RuntimeEvent = RuntimeEvent;
+    type MaxMetadataSize = MaxMetadataSize;
+    type MaxCredentialsPerHolder = MaxCredentialsPerHolder;
+    type WeightInfo = credential::weights::SubstrateWeight;
+}
+
+// Reputation pallet configuration
+parameter_types! {
+    pub const MaxEndorsements: u32 = 50;
+    pub const MaxCommentSize: u32 = 256;
+}
+
+impl reputation::Config for Test {
+    type RuntimeEvent = RuntimeEvent;
+    type MaxEndorsements = MaxEndorsements;
+    type MaxCommentSize = MaxCommentSize;
+    type WeightInfo = reputation::weights::SubstrateWeight;
+}
+
+// Test externalities initialization
+pub fn new_test_ext() -> TestExternalities {
+    frame_system::GenesisConfig::<Test>::default()
+        .build_storage()
+        .unwrap()
+        .into()
+}
+
+// ================== Helper Functions ==================
+
+/// Create a DID for an account
+pub fn create_did_for_account(account: u64) {
+    let public_key = [account as u8; 32];
+    assert_ok!(Did::create_did(
+        RuntimeOrigin::signed(account),
+        public_key,
+        did::KeyType::Ed25519
+    ));
+}
+
+/// Register an institution
+pub fn register_institution(account: u64, name: &str) {
+    create_did_for_account(account);
+    
+    let name_bytes: BoundedVec<u8, MaxDocumentSize> = 
+        name.as_bytes().to_vec().try_into().unwrap();
+    
+    assert_ok!(Did::register_institution(
+        RuntimeOrigin::signed(account),
+        name_bytes
+    ));
+}
+
+/// Verify an institution (root only)
+pub fn verify_institution(account: u64) {
+    assert_ok!(Did::verify_institution(
+        RuntimeOrigin::root(),
+        account
+    ));
+}
+
+/// Setup a verified institution with DID
+pub fn setup_verified_institution(account: u64, name: &str) {
+    register_institution(account, name);
+    verify_institution(account);
+}
+
+/// Create an endorsement with default parameters
+pub fn create_test_endorsement(endorser: u64, endorsee: u64) {
+    create_did_for_account(endorser);
+    create_did_for_account(endorsee);
+
+    let comment: BoundedVec<u8, ConstU32<256>> = 
+        b"Great institution!".to_vec().try_into().unwrap();
+
+    assert_ok!(Reputation::endorse(
+        RuntimeOrigin::signed(endorser),
+        endorsee,
+        reputation::EndorsementType::Professional,
+        comment,
+        5
+    ));
+}
+</file>
+
+<file path="reputation/src/tests.rs">
+use crate::{mock::*, Error, Event, EndorsementType};
+use frame::testing_prelude::*;
+use frame::traits;
+
+// ================== Test Constants ==================
+
+const INSTITUTION_A: u64 = 1;
+const INSTITUTION_B: u64 = 2;
+const INSTITUTION_C: u64 = 3;
+const STUDENT: u64 = 4;
+const VERIFIER: u64 = 5;
+
+// ================== Endorsement Tests ==================
+
+#[test]
+fn endorse_works() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        // Setup two institutions with DIDs
+        create_did_for_account(INSTITUTION_A);
+        create_did_for_account(INSTITUTION_B);
+
+        let comment: BoundedVec<u8, ConstU32<256>> = 
+            b"Excellent research contributions".to_vec().try_into().unwrap();
+
+        // Create endorsement
+        assert_ok!(Reputation::endorse(
+            RuntimeOrigin::signed(INSTITUTION_A),
+            INSTITUTION_B,
+            EndorsementType::Research,
+            comment.clone(),
+            8
+        ));
+
+        // Verify event was emitted
+        System::assert_last_event(
+            Event::EndorsementCreated {
+                endorser: INSTITUTION_A,
+                endorsee: INSTITUTION_B,
+                endorsement_type: EndorsementType::Research,
+                weight: 8,
+            }.into()
+        );
+
+        // Check endorsement was stored
+        assert!(Reputation::has_endorsed(INSTITUTION_A, INSTITUTION_B));
+
+        // Check endorsements given list
+        let given = Reputation::endorsements_given(INSTITUTION_A);
+        assert_eq!(given.len(), 1);
+        assert_eq!(given[0].endorsee, INSTITUTION_B);
+        assert_eq!(given[0].weight, 8);
+
+        // Check endorsements received list
+        let received = Reputation::endorsements_received(INSTITUTION_B);
+        assert_eq!(received.len(), 1);
+        assert_eq!(received[0].endorser, INSTITUTION_A);
+
+        // Check reputation scores updated
+        let score_a = Reputation::reputation_scores(INSTITUTION_A);
+        assert_eq!(score_a.endorsements_given, 1);
+
+        let score_b = Reputation::reputation_scores(INSTITUTION_B);
+        assert_eq!(score_b.endorsements_received, 1);
+        assert!(score_b.total_score > 0);
+    });
+}
+
+#[test]
+fn endorse_fails_if_endorser_has_no_did() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        create_did_for_account(INSTITUTION_B);
+
+        let comment: BoundedVec<u8, ConstU32<256>> = 
+            b"Comment".to_vec().try_into().unwrap();
+
+        // Should fail because endorser has no DID
+        assert_noop!(
+            Reputation::endorse(
+                RuntimeOrigin::signed(INSTITUTION_A),
+                INSTITUTION_B,
+                EndorsementType::Professional,
+                comment,
+                5
+            ),
+            Error::<Test>::NoDid
+        );
+    });
+}
+
+#[test]
+fn endorse_fails_if_endorsee_has_no_did() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        create_did_for_account(INSTITUTION_A);
+
+        let comment: BoundedVec<u8, ConstU32<256>> = 
+            b"Comment".to_vec().try_into().unwrap();
+
+        // Should fail because endorsee has no DID
+        assert_noop!(
+            Reputation::endorse(
+                RuntimeOrigin::signed(INSTITUTION_A),
+                INSTITUTION_B,
+                EndorsementType::Professional,
+                comment,
+                5
+            ),
+            Error::<Test>::NoDid
+        );
+    });
+}
+
+#[test]
+fn endorse_fails_if_did_inactive() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        create_did_for_account(INSTITUTION_A);
+        create_did_for_account(INSTITUTION_B);
+
+        // Deactivate institution B's DID
+        assert_ok!(Did::deactivate_did(RuntimeOrigin::signed(INSTITUTION_B)));
+
+        let comment: BoundedVec<u8, ConstU32<256>> = 
+            b"Comment".to_vec().try_into().unwrap();
+
+        // Should fail because endorsee's DID is inactive
+        assert_noop!(
+            Reputation::endorse(
+                RuntimeOrigin::signed(INSTITUTION_A),
+                INSTITUTION_B,
+                EndorsementType::Professional,
+                comment,
+                5
+            ),
+            Error::<Test>::DidNotActive
+        );
+    });
+}
+
+#[test]
+fn endorse_fails_for_self_endorsement() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        create_did_for_account(INSTITUTION_A);
+
+        let comment: BoundedVec<u8, ConstU32<256>> = 
+            b"I'm great!".to_vec().try_into().unwrap();
+
+        // Should fail - cannot endorse yourself
+        assert_noop!(
+            Reputation::endorse(
+                RuntimeOrigin::signed(INSTITUTION_A),
+                INSTITUTION_A,
+                EndorsementType::Professional,
+                comment,
+                5
+            ),
+            Error::<Test>::CannotEndorseSelf
+        );
+    });
+}
+
+#[test]
+fn endorse_fails_if_already_endorsed() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        create_did_for_account(INSTITUTION_A);
+        create_did_for_account(INSTITUTION_B);
+
+        let comment: BoundedVec<u8, ConstU32<256>> = 
+            b"Good work".to_vec().try_into().unwrap();
+
+        // First endorsement succeeds
+        assert_ok!(Reputation::endorse(
+            RuntimeOrigin::signed(INSTITUTION_A),
+            INSTITUTION_B,
+            EndorsementType::Professional,
+            comment.clone(),
+            5
+        ));
+
+        // Second endorsement fails
+        assert_noop!(
+            Reputation::endorse(
+                RuntimeOrigin::signed(INSTITUTION_A),
+                INSTITUTION_B,
+                EndorsementType::Academic,
+                comment,
+                7
+            ),
+            Error::<Test>::AlreadyEndorsed
+        );
+    });
+}
+
+#[test]
+fn endorse_fails_for_invalid_weight() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        create_did_for_account(INSTITUTION_A);
+        create_did_for_account(INSTITUTION_B);
+
+        let comment: BoundedVec<u8, ConstU32<256>> = 
+            b"Comment".to_vec().try_into().unwrap();
+
+        // Weight 0 should fail
+        assert_noop!(
+            Reputation::endorse(
+                RuntimeOrigin::signed(INSTITUTION_A),
+                INSTITUTION_B,
+                EndorsementType::Professional,
+                comment.clone(),
+                0
+            ),
+            Error::<Test>::InvalidWeight
+        );
+
+        // Weight 11 should fail
+        assert_noop!(
+            Reputation::endorse(
+                RuntimeOrigin::signed(INSTITUTION_A),
+                INSTITUTION_B,
+                EndorsementType::Professional,
+                comment,
+                11
+            ),
+            Error::<Test>::InvalidWeight
+        );
+    });
+}
+
+#[test]
+fn multiple_endorsements_from_different_accounts() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        create_did_for_account(INSTITUTION_A);
+        create_did_for_account(INSTITUTION_B);
+        create_did_for_account(INSTITUTION_C);
+
+        let comment: BoundedVec<u8, ConstU32<256>> = 
+            b"Great!".to_vec().try_into().unwrap();
+
+        // Institution A endorses B
+        assert_ok!(Reputation::endorse(
+            RuntimeOrigin::signed(INSTITUTION_A),
+            INSTITUTION_B,
+            EndorsementType::Professional,
+            comment.clone(),
+            5
+        ));
+
+        // Institution C also endorses B
+        assert_ok!(Reputation::endorse(
+            RuntimeOrigin::signed(INSTITUTION_C),
+            INSTITUTION_B,
+            EndorsementType::Academic,
+            comment,
+            8
+        ));
+
+        // Check B received 2 endorsements
+        let received = Reputation::endorsements_received(INSTITUTION_B);
+        assert_eq!(received.len(), 2);
+
+        // Check reputation score
+        let score_b = Reputation::reputation_scores(INSTITUTION_B);
+        assert_eq!(score_b.endorsements_received, 2);
+        assert_eq!(score_b.total_score, 40); // 2 * 20 = 40
+    });
+}
+
+// ================== Remove Endorsement Tests ==================
+
+#[test]
+fn remove_endorsement_works() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        // Setup and create endorsement
+        create_test_endorsement(INSTITUTION_A, INSTITUTION_B);
+
+        // Get initial score
+        let initial_score = Reputation::reputation_scores(INSTITUTION_B);
+        assert_eq!(initial_score.endorsements_received, 1);
+
+        // Remove endorsement
+        assert_ok!(Reputation::remove_endorsement(
+            RuntimeOrigin::signed(INSTITUTION_A),
+            INSTITUTION_B
+        ));
+
+        // Verify event
+        System::assert_last_event(
+            Event::EndorsementRemoved {
+                endorser: INSTITUTION_A,
+                endorsee: INSTITUTION_B,
+            }.into()
+        );
+
+        // Check endorsement was removed
+        assert!(!Reputation::has_endorsed(INSTITUTION_A, INSTITUTION_B));
+
+        // Check lists were updated
+        let given = Reputation::endorsements_given(INSTITUTION_A);
+        assert_eq!(given.len(), 0);
+
+        let received = Reputation::endorsements_received(INSTITUTION_B);
+        assert_eq!(received.len(), 0);
+
+        // Check reputation scores updated
+        let final_score = Reputation::reputation_scores(INSTITUTION_B);
+        assert_eq!(final_score.endorsements_received, 0);
+        assert_eq!(final_score.total_score, 0);
+    });
+}
+
+#[test]
+fn remove_endorsement_fails_if_not_found() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        create_did_for_account(INSTITUTION_A);
+        create_did_for_account(INSTITUTION_B);
+
+        // Try to remove non-existent endorsement
+        assert_noop!(
+            Reputation::remove_endorsement(
+                RuntimeOrigin::signed(INSTITUTION_A),
+                INSTITUTION_B
+            ),
+            Error::<Test>::EndorsementNotFound
+        );
+    });
+}
+
+// ================== Credential Issuance Recording Tests ==================
+
+#[test]
+fn record_credential_issuance_works() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        setup_verified_institution(INSTITUTION_A, "MIT");
+
+        // Record credential issuance
+        assert_ok!(Reputation::record_credential_issuance(
+            RuntimeOrigin::root(),
+            INSTITUTION_A
+        ));
+
+        // Check reputation was updated
+        let score = Reputation::reputation_scores(INSTITUTION_A);
+        assert_eq!(score.credentials_issued, 1);
+        assert_eq!(score.total_score, 10); // 1 * 10 = 10
+
+        // Verify events
+        System::assert_has_event(
+            Event::CredentialIssuanceRecorded {
+                issuer: INSTITUTION_A,
+            }.into()
+        );
+
+        System::assert_last_event(
+            Event::ReputationUpdated {
+                account: INSTITUTION_A,
+                new_score: 10,
+            }.into()
+        );
+    });
+}
+
+#[test]
+fn record_credential_issuance_fails_for_non_root() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        // Should fail because only root can call this
+        assert_noop!(
+            Reputation::record_credential_issuance(
+                RuntimeOrigin::signed(INSTITUTION_A),
+                INSTITUTION_A
+            ),
+            traits::BadOrigin
+        );
+    });
+}
+
+#[test]
+fn multiple_credential_issuances_update_score() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        setup_verified_institution(INSTITUTION_A, "MIT");
+
+        // Record 5 credential issuances
+        for _ in 0..5 {
+            assert_ok!(Reputation::record_credential_issuance(
+                RuntimeOrigin::root(),
+                INSTITUTION_A
+            ));
+        }
+
+        // Check reputation
+        let score = Reputation::reputation_scores(INSTITUTION_A);
+        assert_eq!(score.credentials_issued, 5);
+        assert_eq!(score.total_score, 50); // 5 * 10 = 50
+    });
+}
+
+// ================== Credential Verification Recording Tests ==================
+
+#[test]
+fn record_credential_verification_works() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        create_did_for_account(VERIFIER);
+
+        // Record verification
+        assert_ok!(Reputation::record_credential_verification(
+            RuntimeOrigin::signed(VERIFIER)
+        ));
+
+        // Check reputation was updated
+        let score = Reputation::reputation_scores(VERIFIER);
+        assert_eq!(score.credentials_verified, 1);
+        assert_eq!(score.total_score, 5); // 1 * 5 = 5
+
+        // Verify events
+        System::assert_has_event(
+            Event::CredentialVerificationRecorded {
+                verifier: VERIFIER,
+            }.into()
+        );
+
+        System::assert_last_event(
+            Event::ReputationUpdated {
+                account: VERIFIER,
+                new_score: 5,
+            }.into()
+        );
+    });
+}
+
+#[test]
+fn multiple_verifications_update_score() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        create_did_for_account(VERIFIER);
+
+        // Record 10 verifications
+        for _ in 0..10 {
+            assert_ok!(Reputation::record_credential_verification(
+                RuntimeOrigin::signed(VERIFIER)
+            ));
+        }
+
+        // Check reputation
+        let score = Reputation::reputation_scores(VERIFIER);
+        assert_eq!(score.credentials_verified, 10);
+        assert_eq!(score.total_score, 50); // 10 * 5 = 50
+    });
+}
+
+// ================== Reputation Score Calculation Tests ==================
+
+#[test]
+fn reputation_score_calculation_is_correct() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        setup_verified_institution(INSTITUTION_A, "MIT");
+
+        // Issue 10 credentials (10 * 10 = 100)
+        for _ in 0..10 {
+            assert_ok!(Reputation::record_credential_issuance(
+                RuntimeOrigin::root(),
+                INSTITUTION_A
+            ));
+        }
+
+        // Create DIDs for endorsers (use different account numbers)
+        let endorser_accounts = [20u64, 21, 22, 23, 24]; // Use unique accounts
+        
+        // Receive 5 endorsements (5 * 20 = 100)
+        for endorser in endorser_accounts {
+            create_did_for_account(endorser);
+            let comment: BoundedVec<u8, ConstU32<256>> = 
+                b"Great!".to_vec().try_into().unwrap();
+            assert_ok!(Reputation::endorse(
+                RuntimeOrigin::signed(endorser),
+                INSTITUTION_A,
+                EndorsementType::Professional,
+                comment,
+                5
+            ));
+        }
+
+        // Expected: 100 (credentials) + 100 (endorsements) = 200
+        let score = Reputation::reputation_scores(INSTITUTION_A);
+        assert_eq!(score.credentials_issued, 10);
+        assert_eq!(score.endorsements_received, 5);
+        assert_eq!(score.total_score, 200);
+    });
+}
+
+#[test]
+fn reputation_score_caps_at_1000() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        setup_verified_institution(INSTITUTION_A, "Super Institution");
+
+        // Issue 150 credentials (150 * 10 = 1500, but capped at 1000)
+        for _ in 0..150 {
+            assert_ok!(Reputation::record_credential_issuance(
+                RuntimeOrigin::root(),
+                INSTITUTION_A
+            ));
+        }
+
+        let score = Reputation::reputation_scores(INSTITUTION_A);
+        assert_eq!(score.credentials_issued, 150);
+        assert_eq!(score.total_score, 1000); // Capped at 1000
+    });
+}
+
+#[test]
+fn update_reputation_score_manually_works() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        setup_verified_institution(INSTITUTION_A, "MIT");
+
+        // Issue 20 credentials
+        for _ in 0..20 {
+            assert_ok!(Reputation::record_credential_issuance(
+                RuntimeOrigin::root(),
+                INSTITUTION_A
+            ));
+        }
+
+        // Add 10 endorsements
+        for i in 0..10 {
+            let endorser = 30 + i;
+            create_did_for_account(endorser);
+            let comment: BoundedVec<u8, ConstU32<256>> = 
+                b"Great!".to_vec().try_into().unwrap();
+            assert_ok!(Reputation::endorse(
+                RuntimeOrigin::signed(endorser),
+                INSTITUTION_A,
+                EndorsementType::Professional,
+                comment,
+                5
+            ));
+        }
+
+        // Score should be: (20 * 10) + (10 * 20) = 400
+        let score = Reputation::reputation_scores(INSTITUTION_A);
+        assert_eq!(score.credentials_issued, 20);
+        assert_eq!(score.endorsements_received, 10);
+        assert_eq!(score.total_score, 400);
+
+        // Update score manually (root) - should recalculate same result
+        assert_ok!(Reputation::update_reputation_score(
+            RuntimeOrigin::root(),
+            INSTITUTION_A
+        ));
+
+        // Score should remain the same after manual update
+        let updated_score = Reputation::reputation_scores(INSTITUTION_A);
+        assert_eq!(updated_score.total_score, 400);
+    });
+}
+
+#[test]
+fn update_reputation_score_fails_for_non_root() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        // Should fail because only root can call this
+        assert_noop!(
+            Reputation::update_reputation_score(
+                RuntimeOrigin::signed(INSTITUTION_A),
+                INSTITUTION_A
+            ),
+            traits::BadOrigin
+        );
+    });
+}
+
+// ================== Integration Tests ==================
+
+#[test]
+fn complete_reputation_lifecycle() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        // Setup institutions
+        setup_verified_institution(INSTITUTION_A, "MIT");
+        setup_verified_institution(INSTITUTION_B, "Stanford");
+        create_did_for_account(STUDENT);
+
+        // Institution A issues credentials
+        for _ in 0..5 {
+            assert_ok!(Reputation::record_credential_issuance(
+                RuntimeOrigin::root(),
+                INSTITUTION_A
+            ));
+        }
+
+        // Institution B endorses Institution A
+        let comment: BoundedVec<u8, ConstU32<256>> = 
+            b"Excellent partner institution".to_vec().try_into().unwrap();
+        assert_ok!(Reputation::endorse(
+            RuntimeOrigin::signed(INSTITUTION_B),
+            INSTITUTION_A,
+            EndorsementType::Academic,
+            comment,
+            9
+        ));
+
+        // Check Institution A's reputation
+        let score_a = Reputation::reputation_scores(INSTITUTION_A);
+        assert_eq!(score_a.credentials_issued, 5);
+        assert_eq!(score_a.endorsements_received, 1);
+        assert_eq!(score_a.endorsements_given, 0);
+        assert_eq!(score_a.total_score, 70); // (5 * 10) + (1 * 20) = 70
+
+        // Check Institution B's reputation
+        let score_b = Reputation::reputation_scores(INSTITUTION_B);
+        assert_eq!(score_b.endorsements_given, 1);
+
+        // Remove endorsement
+        assert_ok!(Reputation::remove_endorsement(
+            RuntimeOrigin::signed(INSTITUTION_B),
+            INSTITUTION_A
+        ));
+
+        // Check updated reputation
+        let final_score = Reputation::reputation_scores(INSTITUTION_A);
+        assert_eq!(final_score.endorsements_received, 0);
+        assert_eq!(final_score.total_score, 50); // Only credentials remain
+    });
+}
+
+#[test]
+fn endorsement_types_are_stored_correctly() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        create_did_for_account(INSTITUTION_A);
+        create_did_for_account(INSTITUTION_B);
+
+        let types = vec![
+            EndorsementType::Professional,
+            EndorsementType::Academic,
+            EndorsementType::Research,
+            EndorsementType::Teaching,
+            EndorsementType::Innovation,
+        ];
+
+        // Create 5 accounts to give different endorsements
+        for (i, endorsement_type) in types.iter().enumerate() {
+            let endorser = 10 + i as u64;
+            create_did_for_account(endorser);
+            
+            let comment: BoundedVec<u8, ConstU32<256>> = 
+                format!("Type {}", i).as_bytes().to_vec().try_into().unwrap();
+
+            assert_ok!(Reputation::endorse(
+                RuntimeOrigin::signed(endorser),
+                INSTITUTION_B,
+                endorsement_type.clone(),
+                comment,
+                5
+            ));
+        }
+
+        // Verify all endorsements were stored with correct types
+        let received = Reputation::endorsements_received(INSTITUTION_B);
+        assert_eq!(received.len(), 5);
+        
+        assert_eq!(received[0].endorsement_type, EndorsementType::Professional);
+        assert_eq!(received[1].endorsement_type, EndorsementType::Academic);
+        assert_eq!(received[2].endorsement_type, EndorsementType::Research);
+        assert_eq!(received[3].endorsement_type, EndorsementType::Teaching);
+        assert_eq!(received[4].endorsement_type, EndorsementType::Innovation);
+    });
+}
+
+#[test]
+fn high_reputation_institution_example() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        setup_verified_institution(INSTITUTION_A, "Harvard University");
+
+        // Issue 50 credentials
+        for _ in 0..50 {
+            assert_ok!(Reputation::record_credential_issuance(
+                RuntimeOrigin::root(),
+                INSTITUTION_A
+            ));
+        }
+
+        // Receive 20 endorsements from various institutions
+        for i in 0..20 {
+            let endorser = 100 + i;
+            create_did_for_account(endorser);
+            
+            let comment: BoundedVec<u8, ConstU32<256>> = 
+                b"Excellent!".to_vec().try_into().unwrap();
+
+            assert_ok!(Reputation::endorse(
+                RuntimeOrigin::signed(endorser),
+                INSTITUTION_A,
+                EndorsementType::Academic,
+                comment,
+                8
+            ));
+        }
+
+        // Calculate expected score: (50 * 10) + (20 * 20) = 900
+        let score = Reputation::reputation_scores(INSTITUTION_A);
+        assert_eq!(score.credentials_issued, 50);
+        assert_eq!(score.endorsements_received, 20);
+        assert_eq!(score.total_score, 900);
+    });
+}
+</file>
+
+<file path="reputation/src/weights.rs">
+use frame::prelude::*;
+
+pub trait WeightInfo {
+    fn endorse() -> Weight;
+    fn remove_endorsement() -> Weight;
+    fn update_reputation_score() -> Weight;
+}
+
+pub struct SubstrateWeight;
+
+impl WeightInfo for SubstrateWeight {
+    fn endorse() -> Weight {
+        Weight::from_parts(30_000_000, 0)
+    }
+    fn remove_endorsement() -> Weight {
+        Weight::from_parts(20_000_000, 0)
+    }
+    fn update_reputation_score() -> Weight {
+        Weight::from_parts(15_000_000, 0)
+    }
+}
+</file>
+
+<file path="reputation/Cargo.toml">
+[package]
+name = "reputation"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+
+[dependencies]
+codec = { features = ["derive"], workspace = true }
+scale-info = { features = ["derive"], workspace = true }
+frame = { features = ["experimental", "runtime"], workspace = true }
+
+# Local pallet dependencies
+did = { path = "../did", default-features = false }
+credential = { path = "../credential", default-features = false }
+
+[features]
+default = ["std"]
+std = [
+    "codec/std",
+    "scale-info/std",
+    "frame/std",
+    "did/std",
+    "credential/std",
+]
+runtime-benchmarks = [
+    "frame/runtime-benchmarks",
+    "did/runtime-benchmarks",
+    "credential/runtime-benchmarks",
+]
+try-runtime = [
+    "frame/try-runtime",
+    "did/try-runtime",
+    "credential/try-runtime",
+]
+</file>
+
+<file path="template/src/benchmarking.rs">
+//! Benchmarking setup for pallet-template
+
+use super::*;
+use frame::{deps::frame_benchmarking::v2::*, prelude::*};
+
+#[benchmarks]
+mod benchmarks {
+	use super::*;
+	#[cfg(test)]
+	use crate::pallet::Pallet as Template;
+	use frame_system::RawOrigin;
+
+	#[benchmark]
+	fn do_something() {
+		let caller: T::AccountId = whitelisted_caller();
+		#[extrinsic_call]
+		do_something(RawOrigin::Signed(caller), 100);
+
+		assert_eq!(Something::<T>::get().map(|v| v.block_number), Some(100u32.into()));
+	}
+
+	#[benchmark]
+	fn cause_error() {
+		Something::<T>::put(CompositeStruct { block_number: 100u32.into() });
+		let caller: T::AccountId = whitelisted_caller();
+		#[extrinsic_call]
+		cause_error(RawOrigin::Signed(caller));
+
+		assert_eq!(Something::<T>::get().map(|v| v.block_number), Some(101u32.into()));
+	}
+
+	impl_benchmark_test_suite!(Template, crate::mock::new_test_ext(), crate::mock::Test);
+}
+</file>
+
+<file path="template/src/lib.rs">
+//! # Template Pallet
+//!
+//! A pallet with minimal functionality to help developers understand the essential components of
+//! writing a FRAME pallet. It is typically used in beginner tutorials or in Polkadot SDK template
+//! as a starting point for creating a new pallet and **not meant to be used in production**.
+//!
+//! ## Overview
+//!
+//! This template pallet contains basic examples of:
+//! - declaring a storage item that stores a single block-number
+//! - declaring and using events
+//! - declaring and using errors
+//! - a dispatchable function that allows a user to set a new value to storage and emits an event
+//!   upon success
+//! - another dispatchable function that causes a custom error to be thrown
+//!
+//! Each pallet section is annotated with an attribute using the `#[pallet::...]` procedural macro.
+//! This macro generates the necessary code for a pallet to be aggregated into a FRAME runtime.
+//!
+//! To get started with pallet development, consider using this tutorial:
+//!
+//! <https://paritytech.github.io/polkadot-sdk/master/polkadot_sdk_docs/guides/your_first_pallet/index.html>
+//!
+//! And reading the main documentation of the `frame` crate:
+//!
+//! <https://paritytech.github.io/polkadot-sdk/master/polkadot_sdk_docs/polkadot_sdk/frame_runtime/index.html>
+//!
+//! And looking at the frame [`kitchen-sink`](https://paritytech.github.io/polkadot-sdk/master/pallet_example_kitchensink/index.html)
+//! pallet, a showcase of all pallet macros.
+//!
+//! ### Pallet Sections
+//!
+//! The pallet sections in this template are:
+//!
+//! - A **configuration trait** that defines the types and parameters which the pallet depends on
+//!   (denoted by the `#[pallet::config]` attribute). See: [`Config`].
+//! - A **means to store pallet-specific data** (denoted by the `#[pallet::storage]` attribute).
+//!   See: [`storage_types`].
+//! - A **declaration of the events** this pallet emits (denoted by the `#[pallet::event]`
+//!   attribute). See: [`Event`].
+//! - A **declaration of the errors** that this pallet can throw (denoted by the `#[pallet::error]`
+//!   attribute). See: [`Error`].
+//! - A **set of dispatchable functions** that define the pallet's functionality (denoted by the
+//!   `#[pallet::call]` attribute). See: [`dispatchables`].
+//!
+//! Run `cargo doc --package pallet-template --open` to view this pallet's documentation.
+
+#![cfg_attr(not(feature = "std"), no_std)]
+
+pub use pallet::*;
+
+#[cfg(test)]
+mod mock;
+
+#[cfg(test)]
+mod tests;
+
+pub mod weights;
+
+#[cfg(feature = "runtime-benchmarks")]
+mod benchmarking;
+
+// <https://paritytech.github.io/polkadot-sdk/master/polkadot_sdk_docs/polkadot_sdk/frame_runtime/index.html>
+// <https://paritytech.github.io/polkadot-sdk/master/polkadot_sdk_docs/guides/your_first_pallet/index.html>
+//
+// To see a full list of `pallet` macros and their use cases, see:
+// <https://paritytech.github.io/polkadot-sdk/master/pallet_example_kitchensink/index.html>
+// <https://paritytech.github.io/polkadot-sdk/master/frame_support/pallet_macros/index.html>
+#[frame::pallet]
+pub mod pallet {
+	use frame::prelude::*;
+
+	/// Configure the pallet by specifying the parameters and types on which it depends.
+	#[pallet::config]
+	pub trait Config: frame_system::Config {
+		type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
+
+		/// A type representing the weights required by the dispatchables of this pallet.
+		type WeightInfo: crate::weights::WeightInfo;
+	}
+
+	#[pallet::pallet]
+	pub struct Pallet<T>(_);
+
+	/// A struct to store a single block-number. Has all the right derives to store it in storage.
+	/// <https://paritytech.github.io/polkadot-sdk/master/polkadot_sdk_docs/reference_docs/frame_storage_derives/index.html>
+	#[derive(
+		Encode, Decode, MaxEncodedLen, TypeInfo, CloneNoBound, PartialEqNoBound, DefaultNoBound,
+	)]
+	#[scale_info(skip_type_params(T))]
+	pub struct CompositeStruct<T: Config> {
+		/// A block number.
+		pub(crate) block_number: BlockNumberFor<T>,
+	}
+
+	/// The pallet's storage items.
+	/// <https://paritytech.github.io/polkadot-sdk/master/polkadot_sdk_docs/guides/your_first_pallet/index.html#storage>
+	/// <https://paritytech.github.io/polkadot-sdk/master/frame_support/pallet_macros/attr.storage.html>
+	#[pallet::storage]
+	pub type Something<T: Config> = StorageValue<_, CompositeStruct<T>>;
+
+	/// Pallets use events to inform users when important changes are made.
+	/// <https://paritytech.github.io/polkadot-sdk/master/polkadot_sdk_docs/guides/your_first_pallet/index.html#event-and-error>
+	#[pallet::event]
+	#[pallet::generate_deposit(pub(super) fn deposit_event)]
+	pub enum Event<T: Config> {
+		/// We usually use passive tense for events.
+		SomethingStored { block_number: BlockNumberFor<T>, who: T::AccountId },
+	}
+
+	/// Errors inform users that something went wrong.
+	/// <https://paritytech.github.io/polkadot-sdk/master/polkadot_sdk_docs/guides/your_first_pallet/index.html#event-and-error>
+	#[pallet::error]
+	pub enum Error<T> {
+		/// Error names should be descriptive.
+		NoneValue,
+		/// Errors should have helpful documentation associated with them.
+		StorageOverflow,
+	}
+
+	#[pallet::hooks]
+	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {}
+
+	/// Dispatchable functions allows users to interact with the pallet and invoke state changes.
+	/// These functions materialize as "extrinsics", which are often compared to transactions.
+	/// Dispatchable functions must be annotated with a weight and must return a DispatchResult.
+	/// <https://paritytech.github.io/polkadot-sdk/master/polkadot_sdk_docs/guides/your_first_pallet/index.html#dispatchables>
+	#[pallet::call]
+	impl<T: Config> Pallet<T> {
+		/// An example dispatchable that takes a singles value as a parameter, writes the value to
+		/// storage and emits an event. This function must be dispatched by a signed extrinsic.
+		#[pallet::call_index(0)]
+		#[pallet::weight(Weight::from_parts(10_000, 0) + T::DbWeight::get().writes(1))]
+		pub fn do_something(origin: OriginFor<T>, bn: u32) -> DispatchResultWithPostInfo {
+			// Check that the extrinsic was signed and get the signer.
+			// This function will return an error if the extrinsic is not signed.
+			// <https://paritytech.github.io/polkadot-sdk/master/polkadot_sdk_docs/reference_docs/frame_origin/index.html>
+			let who = ensure_signed(origin)?;
+
+			// Convert the u32 into a block number. This is possible because the set of trait bounds
+			// defined in [`frame_system::Config::BlockNumber`].
+			let block_number: BlockNumberFor<T> = bn.into();
+
+			// Update storage.
+			<Something<T>>::put(CompositeStruct { block_number });
+
+			// Emit an event.
+			Self::deposit_event(Event::SomethingStored { block_number, who });
+
+			// Return a successful [`DispatchResultWithPostInfo`] or [`DispatchResult`].
+			Ok(().into())
+		}
+
+		/// An example dispatchable that may throw a custom error.
+		#[pallet::call_index(1)]
+		#[pallet::weight(Weight::from_parts(10_000, 0) + T::DbWeight::get().reads_writes(1,1))]
+		pub fn cause_error(origin: OriginFor<T>) -> DispatchResultWithPostInfo {
+			let _who = ensure_signed(origin)?;
+
+			// Read a value from storage.
+			match <Something<T>>::get() {
+				// Return an error if the value has not been set.
+				None => Err(Error::<T>::NoneValue)?,
+				Some(mut old) => {
+					// Increment the value read from storage; will error in the event of overflow.
+					old.block_number = old
+						.block_number
+						.checked_add(&One::one())
+						// ^^ equivalent is to:
+						// .checked_add(&1u32.into())
+						// both of which build a `One` instance for the type `BlockNumber`.
+						.ok_or(Error::<T>::StorageOverflow)?;
+					// Update the value in storage with the incremented result.
+					<Something<T>>::put(old);
+					// Explore how you can rewrite this using
+					// [`frame_support::storage::StorageValue::mutate`].
+					Ok(().into())
+				},
+			}
+		}
+	}
+}
+</file>
+
+<file path="template/src/mock.rs">
+use frame::{
+	deps::{frame_support::weights::constants::RocksDbWeight, frame_system::GenesisConfig},
+	prelude::*,
+	runtime::prelude::*,
+	testing_prelude::*,
+};
+
+// Configure a mock runtime to test the pallet.
+#[frame_construct_runtime]
+mod test_runtime {
+	#[runtime::runtime]
+	#[runtime::derive(
+		RuntimeCall,
+		RuntimeEvent,
+		RuntimeError,
+		RuntimeOrigin,
+		RuntimeFreezeReason,
+		RuntimeHoldReason,
+		RuntimeSlashReason,
+		RuntimeLockId,
+		RuntimeTask,
+		RuntimeViewFunction
+	)]
+	pub struct Test;
+
+	#[runtime::pallet_index(0)]
+	pub type System = frame_system;
+	#[runtime::pallet_index(1)]
+	pub type Template = crate;
+}
+
+#[derive_impl(frame_system::config_preludes::TestDefaultConfig)]
+impl frame_system::Config for Test {
+	type Nonce = u64;
+	type Block = MockBlock<Test>;
+	type BlockHashCount = ConstU64<250>;
+	type DbWeight = RocksDbWeight;
+}
+
+impl crate::Config for Test {
+	type RuntimeEvent = RuntimeEvent;
+	type WeightInfo = ();
+}
+
+// Build genesis storage according to the mock runtime.
+pub fn new_test_ext() -> TestState {
+	GenesisConfig::<Test>::default().build_storage().unwrap().into()
+}
+</file>
+
+<file path="template/src/tests.rs">
+use crate::{mock::*, Error, Something};
+use frame::testing_prelude::*;
+
+#[test]
+fn it_works_for_default_value() {
+	new_test_ext().execute_with(|| {
+		// Dispatch a signed extrinsic.
+		assert_ok!(Template::do_something(RuntimeOrigin::signed(1), 42));
+		// Read pallet storage and assert an expected result.
+		assert_eq!(Something::<Test>::get().map(|v| v.block_number), Some(42));
+	});
+}
+
+#[test]
+fn correct_error_for_none_value() {
+	new_test_ext().execute_with(|| {
+		// Ensure the expected error is thrown when no value is present.
+		assert_noop!(Template::cause_error(RuntimeOrigin::signed(1)), Error::<Test>::NoneValue);
+	});
+}
+</file>
+
+<file path="template/src/weights.rs">
+//! Autogenerated weights for pallet_template
+//!
+//! THIS FILE WAS AUTO-GENERATED USING THE SUBSTRATE BENCHMARK CLI VERSION 4.0.0-dev
+//! DATE: 2023-04-06, STEPS: `50`, REPEAT: `20`, LOW RANGE: `[]`, HIGH RANGE: `[]`
+//! WORST CASE MAP SIZE: `1000000`
+//! HOSTNAME: `_`, CPU: `<UNKNOWN>`
+//! EXECUTION: Some(Wasm), WASM-EXECUTION: Compiled, CHAIN: Some("dev"), DB CACHE: 1024
+
+// Executed Command:
+// ../../target/release/node-template
+// benchmark
+// pallet
+// --chain
+// dev
+// --pallet
+// pallet_template
+// --extrinsic
+// *
+// --steps=50
+// --repeat=20
+// --wasm-execution=compiled
+// --output
+// pallets/template/src/weights.rs
+// --template
+// ../../.maintain/frame-weight-template.hbs
+
+#![cfg_attr(rustfmt, rustfmt_skip)]
+#![allow(unused_parens)]
+#![allow(unused_imports)]
+
+use frame::{deps::frame_support::weights::constants::RocksDbWeight, prelude::*};
+use core::marker::PhantomData;
+
+/// Weight functions needed for pallet_template.
+pub trait WeightInfo {
+	fn do_something() -> Weight;
+	fn cause_error() -> Weight;
+}
+
+/// Weights for pallet_template using the Substrate node and recommended hardware.
+#[cfg_attr(
+    not(feature = "std"),
+    deprecated(
+        note = "SubstrateWeight is auto-generated and should not be used in production. Replace it with runtime benchmarked weights."
+    )
+)]
+pub struct SubstrateWeight<T>(PhantomData<T>);
+impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
+	/// Storage: Template Something (r:0 w:1)
+	/// Proof: Template Something (max_values: Some(1), max_size: Some(4), added: 499, mode: MaxEncodedLen)
+	fn do_something() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `0`
+		//  Estimated: `0`
+		// Minimum execution time: 8_000_000 picoseconds.
+		Weight::from_parts(9_000_000, 0)
+			.saturating_add(T::DbWeight::get().writes(1_u64))
+	}
+	/// Storage: Template Something (r:1 w:1)
+	/// Proof: Template Something (max_values: Some(1), max_size: Some(4), added: 499, mode: MaxEncodedLen)
+	fn cause_error() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `32`
+		//  Estimated: `1489`
+		// Minimum execution time: 6_000_000 picoseconds.
+		Weight::from_parts(6_000_000, 1489)
+			.saturating_add(T::DbWeight::get().reads(1_u64))
+			.saturating_add(T::DbWeight::get().writes(1_u64))
+	}
+}
+
+// For backwards compatibility and tests
+impl WeightInfo for () {
+	/// Storage: Template Something (r:0 w:1)
+	/// Proof: Template Something (max_values: Some(1), max_size: Some(4), added: 499, mode: MaxEncodedLen)
+	fn do_something() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `0`
+		//  Estimated: `0`
+		// Minimum execution time: 8_000_000 picoseconds.
+		Weight::from_parts(9_000_000, 0)
+			.saturating_add(RocksDbWeight::get().writes(1_u64))
+	}
+	/// Storage: Template Something (r:1 w:1)
+	/// Proof: Template Something (max_values: Some(1), max_size: Some(4), added: 499, mode: MaxEncodedLen)
+	fn cause_error() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `32`
+		//  Estimated: `1489`
+		// Minimum execution time: 6_000_000 picoseconds.
+		Weight::from_parts(6_000_000, 1489)
+			.saturating_add(RocksDbWeight::get().reads(1_u64))
+			.saturating_add(RocksDbWeight::get().writes(1_u64))
+	}
+}
+</file>
+
+<file path="template/Cargo.toml">
+[package]
+name = "pallet-parachain-template"
+description = "FRAME pallet template for defining custom runtime logic."
+version = "0.1.0"
+license = "Unlicense"
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+edition.workspace = true
+publish = false
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+
+[dependencies]
+codec = { features = ["derive"], workspace = true }
+frame = { workspace = true, features = ["experimental", "runtime"], default-features = false }
+scale-info = { features = ["derive"], workspace = true }
+
+[features]
+default = ["std"]
+runtime-benchmarks = ["frame/runtime-benchmarks"]
+std = ["codec/std", "frame/std", "scale-info/std"]
+try-runtime = ["frame/try-runtime"]
+</file>
+
+<file path="README.md">
+# Pallets
+
+ℹ️ A pallet is a unit of encapsulated logic, with a clearly defined responsibility. A pallet is analogous to a
+module in the runtime.
+
+💁 In this template, there is a simple custom pallet based on the FRAME framework.
+
+👉 Learn more about FRAME
+[here](https://paritytech.github.io/polkadot-sdk/master/polkadot_sdk_docs/polkadot_sdk/frame_runtime/index.html).
+
+🧑‍🏫 Please refer to
+[this guide](https://paritytech.github.io/polkadot-sdk/master/polkadot_sdk_docs/guides/your_first_pallet/index.html)
+to learn how to write a basic pallet.
+</file>
+
+</files>

@@ -73,6 +73,7 @@ src/
       NotificationBell.tsx
       Sidebar.tsx
     requests/
+      CreateRequestForm.tsx
       RequestsList.tsx
       ReviewRequestModal.tsx
     ui/
@@ -86,12 +87,17 @@ src/
   hooks/
     blockchain/
       useBalance.ts
+      useBlockchain.ts
       usePolkadotApi.ts
   lib/
+    blockchain/
+      queries.ts
+      transactions.ts
     utils/
       bn-shim.ts
       cn.ts
       constants.ts
+      env.ts
   pages/
     CreateDIDPage.tsx
     Credentials.tsx
@@ -109,6 +115,7 @@ src/
     PolkadotProvider.tsx
     WalletProvider.tsx
   store/
+    credentialRequests.store.ts
     credentials.store.ts
     did.store.ts
     notifications.store.ts
@@ -121,6 +128,7 @@ src/
   index.css
   main.tsx
   vite-env.d.ts
+.env.example
 .gitignore
 check-files.sh
 eslint.config.js
@@ -3978,7 +3986,7 @@ export default function Footer() {
             <h3 className="font-semibold text-sm mb-3">Community</h3>
             <div className="flex space-x-4">
               <a 
-                href="https://github.com" 
+                href="https://github.com/Princeby/academic-verification" 
                 target="_blank" 
                 rel="noopener noreferrer"
                 className="text-muted-foreground hover:text-foreground transition-colors"
@@ -3998,7 +4006,7 @@ export default function Footer() {
         </div>
 
         <div className="mt-8 pt-6 border-t border-border flex flex-col sm:flex-row justify-between items-center text-sm text-muted-foreground">
-          <p>© 2024 Academic Verify. All rights reserved.</p>
+          <p>© 2025 Academic Verify. All rights reserved.</p>
           <div className="flex items-center space-x-4 mt-4 sm:mt-0">
             <span>v1.0.0</span>
             <span>•</span>
@@ -4547,6 +4555,428 @@ export default function Sidebar() {
         onClose={() => setShowCreateDIDModal(false)}
       />
     </>
+  );
+}
+</file>
+
+<file path="src/components/requests/CreateRequestForm.tsx">
+// src/components/requests/CreateRequestForm.tsx
+import { useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import {
+  Search,
+  Building2,
+  ArrowLeft,
+  ArrowRight,
+  FileText,
+  Upload,
+  Loader2,
+  CheckCircle2,
+  Calendar
+} from 'lucide-react';
+import { Button } from '../ui/Button';
+import { Input } from '../ui/Input';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../ui/Card';
+import { Badge } from '../ui/Badge';
+import { toast } from 'sonner';
+import { CREDENTIAL_TYPES } from '@/lib/utils/constants';
+import { useDIDStore } from '@/store/did.store';
+import type { CreateRequestFormData } from '@/types/credentialRequest.types';
+
+// Form validation schema
+const requestSchema = z.object({
+  institution: z.string().min(10, 'Please select a valid institution'),
+  credentialType: z.enum(CREDENTIAL_TYPES),
+  programName: z.string().min(3, 'Program name is required'),
+  fieldOfStudy: z.string().min(2, 'Field of study is required'),
+  startDate: z.string().min(1, 'Start date is required'),
+  endDate: z.string().min(1, 'End date is required'),
+  expectedGraduationDate: z.string().optional(),
+  studentId: z.string().optional(),
+  major: z.string().optional(),
+  minor: z.string().optional(),
+  expectedGPA: z.string().optional(),
+  additionalNotes: z.string().max(500).optional(),
+});
+
+interface CreateRequestFormProps {
+  onSuccess?: () => void;
+  onCancel?: () => void;
+}
+
+export default function CreateRequestForm({ onSuccess, onCancel }: CreateRequestFormProps) {
+  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedInstitution, setSelectedInstitution] = useState<any>(null);
+  const [uploadedDocs, setUploadedDocs] = useState<File[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { didAddress } = useDIDStore();
+
+  const {
+    register,
+    handleSubmit,
+    watch,
+    setValue,
+    formState: { errors },
+    trigger
+  } = useForm<CreateRequestFormData>({
+    resolver: zodResolver(requestSchema),
+    defaultValues: {
+      credentialType: "Bachelor's Degree",
+    },
+  });
+
+  const selectedType = watch('credentialType');
+
+  // Mock institution search
+  const searchInstitutions = async () => {
+    // TODO: Replace with blockchain query
+    return [
+      {
+        did: '5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY',
+        name: 'Massachusetts Institute of Technology',
+        type: 'University',
+        verified: true,
+      },
+      {
+        did: '5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty',
+        name: 'Stanford University',
+        type: 'University',
+        verified: true,
+      },
+    ];
+  };
+
+  const [institutions, setInstitutions] = useState<any[]>([]);
+  const [searching, setSearching] = useState(false);
+
+  const handleSearch = async () => {
+    setSearching(true);
+    const results = await searchInstitutions();
+    setInstitutions(results);
+    setSearching(false);
+  };
+
+  const selectInstitution = (institution: any) => {
+    setSelectedInstitution(institution);
+    setValue('institution', institution.did);
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    setUploadedDocs(prev => [...prev, ...files]);
+  };
+
+  const nextStep = async () => {
+    let fieldsToValidate: (keyof CreateRequestFormData)[] = [];
+
+    if (step === 1) {
+      if (!selectedInstitution) {
+        toast.error('Please select an institution');
+        return;
+      }
+    } else if (step === 2) {
+      fieldsToValidate = ['credentialType', 'programName', 'fieldOfStudy'];
+    } else if (step === 3) {
+      fieldsToValidate = ['startDate', 'endDate'];
+    }
+
+    if (fieldsToValidate.length > 0) {
+      const isValid = await trigger(fieldsToValidate);
+      if (!isValid) return;
+    }
+
+    setStep((prev) => Math.min(prev + 1, 4) as 1 | 2 | 3 | 4);
+  };
+
+  const prevStep = () => {
+    setStep((prev) => Math.max(prev - 1, 1) as 1 | 2 | 3 | 4);
+  };
+
+  const onSubmit = async (data: CreateRequestFormData) => {
+    if (step !== 4) return;
+
+    setIsSubmitting(true);
+
+    try {
+      // TODO: Submit to blockchain
+      console.log('Submitting request:', data);
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      toast.success('Request submitted successfully!');
+      onSuccess?.();
+    } catch (error) {
+      console.error('Failed to submit request:', error);
+      toast.error('Failed to submit request');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Step 1: Select Institution
+  const renderStep1 = () => (
+    <div className="space-y-6">
+      <div>
+        <label className="block text-sm font-semibold mb-2">
+          Search for Institution
+        </label>
+        <div className="flex space-x-2">
+          <Input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search by name..."
+            className="flex-1"
+          />
+          <Button onClick={handleSearch} disabled={searching}>
+            {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+          </Button>
+        </div>
+      </div>
+
+      {institutions.length > 0 && (
+        <div className="space-y-3">
+          <p className="text-sm font-semibold">Select Institution</p>
+          {institutions.map((inst) => (
+            <button
+              key={inst.did}
+              onClick={() => selectInstitution(inst)}
+              className={`w-full text-left p-4 border-2 rounded-lg transition-colors ${
+                selectedInstitution?.did === inst.did
+                  ? 'border-primary bg-primary/5'
+                  : 'border-border hover:border-primary/50'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <Building2 className="h-8 w-8 text-primary" />
+                  <div>
+                    <p className="font-semibold">{inst.name}</p>
+                    <p className="text-sm text-muted-foreground">{inst.type}</p>
+                  </div>
+                </div>
+                {inst.verified && <Badge variant="success">Verified</Badge>}
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {selectedInstitution && (
+        <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
+          <p className="text-sm font-semibold text-green-800 dark:text-green-400">
+            Selected: {selectedInstitution.name}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+
+  // Step 2: Credential Details
+  const renderStep2 = () => (
+    <div className="space-y-6">
+      <div>
+        <label className="block text-sm font-semibold mb-2">Credential Type *</label>
+        <select
+          {...register('credentialType')}
+          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+        >
+          {CREDENTIAL_TYPES.map((type) => (
+            <option key={type} value={type}>{type}</option>
+          ))}
+        </select>
+      </div>
+
+      <div>
+        <label className="block text-sm font-semibold mb-2">Program Name *</label>
+        <Input
+          {...register('programName')}
+          placeholder="e.g., Bachelor of Science in Computer Science"
+          className={errors.programName ? 'border-red-500' : ''}
+        />
+        {errors.programName && (
+          <p className="text-sm text-red-600 mt-1">{errors.programName.message}</p>
+        )}
+      </div>
+
+      <div>
+        <label className="block text-sm font-semibold mb-2">Field of Study *</label>
+        <Input
+          {...register('fieldOfStudy')}
+          placeholder="e.g., Computer Science"
+          className={errors.fieldOfStudy ? 'border-red-500' : ''}
+        />
+        {errors.fieldOfStudy && (
+          <p className="text-sm text-red-600 mt-1">{errors.fieldOfStudy.message}</p>
+        )}
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-semibold mb-2">Major (Optional)</label>
+          <Input {...register('major')} placeholder="e.g., Software Engineering" />
+        </div>
+        <div>
+          <label className="block text-sm font-semibold mb-2">Minor (Optional)</label>
+          <Input {...register('minor')} placeholder="e.g., Mathematics" />
+        </div>
+      </div>
+    </div>
+  );
+
+  // Step 3: Academic Info
+  const renderStep3 = () => (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-semibold mb-2">Start Date *</label>
+          <Input
+            {...register('startDate')}
+            type="date"
+            className={errors.startDate ? 'border-red-500' : ''}
+          />
+          {errors.startDate && (
+            <p className="text-sm text-red-600 mt-1">{errors.startDate.message}</p>
+          )}
+        </div>
+        <div>
+          <label className="block text-sm font-semibold mb-2">End Date *</label>
+          <Input
+            {...register('endDate')}
+            type="date"
+            className={errors.endDate ? 'border-red-500' : ''}
+          />
+          {errors.endDate && (
+            <p className="text-sm text-red-600 mt-1">{errors.endDate.message}</p>
+          )}
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-sm font-semibold mb-2">Student ID (Optional)</label>
+        <Input {...register('studentId')} placeholder="Your student ID" />
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-semibold mb-2">Expected GPA (Optional)</label>
+          <Input {...register('expectedGPA')} placeholder="e.g., 3.85" />
+        </div>
+        <div>
+          <label className="block text-sm font-semibold mb-2">Expected Graduation (Optional)</label>
+          <Input {...register('expectedGraduationDate')} type="date" />
+        </div>
+      </div>
+    </div>
+  );
+
+  // Step 4: Review
+  const renderStep4 = () => {
+    const formData = watch();
+    return (
+      <div className="space-y-4">
+        <div className="bg-accent rounded-lg p-4">
+          <h3 className="font-semibold mb-3">Review Your Request</h3>
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Institution:</span>
+              <span className="font-medium">{selectedInstitution?.name}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Program:</span>
+              <span className="font-medium">{formData.programName}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Type:</span>
+              <Badge>{formData.credentialType}</Badge>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-semibold mb-2">Additional Notes (Optional)</label>
+          <textarea
+            {...register('additionalNotes')}
+            placeholder="Any additional information..."
+            className="flex min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+            maxLength={500}
+          />
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <Card className="max-w-3xl mx-auto">
+      <CardHeader>
+        <CardTitle>Request Credential</CardTitle>
+        <CardDescription>Submit a credential request to an institution</CardDescription>
+
+        {/* Progress */}
+        <div className="flex items-center space-x-2 mt-4">
+          {[1, 2, 3, 4].map((s) => (
+            <div key={s} className="flex items-center flex-1">
+              <div
+                className={`h-2 flex-1 rounded-full transition-colors ${
+                  s <= step ? 'bg-primary' : 'bg-muted'
+                }`}
+              />
+              {s < 4 && <div className="w-2" />}
+            </div>
+          ))}
+        </div>
+      </CardHeader>
+
+      <CardContent>
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+          {step === 1 && renderStep1()}
+          {step === 2 && renderStep2()}
+          {step === 3 && renderStep3()}
+          {step === 4 && renderStep4()}
+
+          {/* Navigation */}
+          <div className="flex justify-between pt-6 border-t">
+            <div>
+              {step > 1 && (
+                <Button type="button" variant="outline" onClick={prevStep}>
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  Previous
+                </Button>
+              )}
+              {onCancel && step === 1 && (
+                <Button type="button" variant="outline" onClick={onCancel}>
+                  Cancel
+                </Button>
+              )}
+            </div>
+
+            <div>
+              {step < 4 ? (
+                <Button type="button" onClick={nextStep}>
+                  Next
+                  <ArrowRight className="h-4 w-4 ml-2" />
+                </Button>
+              ) : (
+                <Button type="submit" disabled={isSubmitting}>
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Submitting...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="h-4 w-4 mr-2" />
+                      Submit Request
+                    </>
+                  )}
+                </Button>
+              )}
+            </div>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
   );
 }
 </file>
@@ -5610,6 +6040,53 @@ export function useBalance() {
 }
 </file>
 
+<file path="src/hooks/blockchain/useBlockchain.ts">
+// src/hooks/blockchain/useBlockchain.ts
+import { useMemo } from 'react';
+import { usePolkadotContext } from '@/providers/PolkadotProvider';
+import { useWalletStore } from '@/store/wallet.store';
+import { 
+  DIDTransactions, 
+  CredentialTransactions, 
+  ReputationTransactions 
+} from '@/lib/blockchain/transactions';
+import { BlockchainQueries } from '@/lib/blockchain/queries';
+
+/**
+ * Main hook for blockchain interactions
+ * Provides transaction and query helpers
+ */
+export function useBlockchain() {
+  const { api, isReady } = usePolkadotContext();
+  const { account } = useWalletStore();
+
+  const transactions = useMemo(() => {
+    if (!api || !isReady) return null;
+
+    return {
+      did: new DIDTransactions(api),
+      credential: new CredentialTransactions(api),
+      reputation: new ReputationTransactions(api),
+    };
+  }, [api, isReady]);
+
+  const queries = useMemo(() => {
+    if (!api || !isReady) return null;
+
+    return new BlockchainQueries(api);
+  }, [api, isReady]);
+
+  return {
+    api,
+    isReady,
+    account,
+    transactions,
+    queries,
+    isConnected: isReady && account !== null,
+  };
+}
+</file>
+
 <file path="src/hooks/blockchain/usePolkadotApi.ts">
 import { useState, useEffect } from 'react';
 import { usePolkadotContext } from '@/providers/PolkadotProvider';
@@ -5658,6 +6135,442 @@ export function usePolkadotApi() {
     chainName,
     error,
   };
+}
+</file>
+
+<file path="src/lib/blockchain/queries.ts">
+// src/lib/blockchain/queries.ts
+import type { ApiPromise } from '@polkadot/api';
+
+/**
+ * Query DID information
+ */
+export class DIDQueries {
+  constructor(private api: ApiPromise) {}
+
+  async getDID(address: string) {
+    try {
+      const didDoc = await this.api.query.did.didDocuments(address);
+      if (didDoc.isEmpty) {
+        return null;
+      }
+      return didDoc.toJSON();
+    } catch (error) {
+      console.error('Error fetching DID:', error);
+      return null;
+    }
+  }
+
+  async getInstitution(address: string) {
+    try {
+      const institution = await this.api.query.did.institutions(address);
+      if (institution.isEmpty) {
+        return null;
+      }
+      return institution.toJSON();
+    } catch (error) {
+      console.error('Error fetching institution:', error);
+      return null;
+    }
+  }
+
+  async isInstitution(address: string): Promise<boolean> {
+    const institution = await this.getInstitution(address);
+    return institution !== null;
+  }
+
+  async isVerifiedInstitution(address: string): Promise<boolean> {
+    const institution = await this.getInstitution(address);
+    return institution?.verified === true;
+  }
+}
+
+/**
+ * Query Credential information
+ */
+export class CredentialQueries {
+  constructor(private api: ApiPromise) {}
+
+  async getCredential(credentialId: string) {
+    try {
+      const credential = await this.api.query.credential.credentials(credentialId);
+      if (credential.isEmpty) {
+        return null;
+      }
+      return credential.toJSON();
+    } catch (error) {
+      console.error('Error fetching credential:', error);
+      return null;
+    }
+  }
+
+  async getCredentialByHash(credentialHash: string) {
+    try {
+      const credentialId = await this.api.query.credential.credentialByHash(credentialHash);
+      if (credentialId.isEmpty) {
+        return null;
+      }
+      
+      const id = credentialId.toString();
+      return this.getCredential(id);
+    } catch (error) {
+      console.error('Error fetching credential by hash:', error);
+      return null;
+    }
+  }
+
+  async getCredentialsByHolder(holderAddress: string) {
+    try {
+      const credentials = await this.api.query.credential.credentialsByHolder(holderAddress);
+      if (credentials.isEmpty) {
+        return [];
+      }
+      
+      const credentialRefs = credentials.toJSON() as any[];
+      
+      // Fetch full credentials
+      const fullCredentials = await Promise.all(
+        credentialRefs.map(ref => this.getCredential(ref.credentialId))
+      );
+      
+      return fullCredentials.filter(c => c !== null);
+    } catch (error) {
+      console.error('Error fetching credentials by holder:', error);
+      return [];
+    }
+  }
+
+  async getCredentialsByIssuer(issuerAddress: string) {
+    try {
+      const credentialIds = await this.api.query.credential.credentialsByIssuer(issuerAddress);
+      if (credentialIds.isEmpty) {
+        return [];
+      }
+      
+      const ids = credentialIds.toJSON() as string[];
+      
+      // Fetch full credentials
+      const fullCredentials = await Promise.all(
+        ids.map(id => this.getCredential(id))
+      );
+      
+      return fullCredentials.filter(c => c !== null);
+    } catch (error) {
+      console.error('Error fetching credentials by issuer:', error);
+      return [];
+    }
+  }
+}
+
+/**
+ * Query Reputation information
+ */
+export class ReputationQueries {
+  constructor(private api: ApiPromise) {}
+
+  async getReputationScore(address: string) {
+    try {
+      const score = await this.api.query.reputation.reputationScores(address);
+      if (score.isEmpty) {
+        return {
+          credentialsIssued: 0,
+          credentialsVerified: 0,
+          endorsementsReceived: 0,
+          endorsementsGiven: 0,
+          totalScore: 0,
+        };
+      }
+      return score.toJSON();
+    } catch (error) {
+      console.error('Error fetching reputation score:', error);
+      return null;
+    }
+  }
+
+  async getEndorsementsReceived(address: string) {
+    try {
+      const endorsements = await this.api.query.reputation.endorsementsReceived(address);
+      if (endorsements.isEmpty) {
+        return [];
+      }
+      return endorsements.toJSON();
+    } catch (error) {
+      console.error('Error fetching endorsements received:', error);
+      return [];
+    }
+  }
+
+  async getEndorsementsGiven(address: string) {
+    try {
+      const endorsements = await this.api.query.reputation.endorsementsGiven(address);
+      if (endorsements.isEmpty) {
+        return [];
+      }
+      return endorsements.toJSON();
+    } catch (error) {
+      console.error('Error fetching endorsements given:', error);
+      return [];
+    }
+  }
+}
+
+/**
+ * Combined queries helper
+ */
+export class BlockchainQueries {
+  did: DIDQueries;
+  credential: CredentialQueries;
+  reputation: ReputationQueries;
+
+  constructor(api: ApiPromise) {
+    this.did = new DIDQueries(api);
+    this.credential = new CredentialQueries(api);
+    this.reputation = new ReputationQueries(api);
+  }
+}
+</file>
+
+<file path="src/lib/blockchain/transactions.ts">
+// src/lib/blockchain/transactions.ts
+import type { ApiPromise } from '@polkadot/api';
+import type { InjectedAccountWithMeta } from '@polkadot/extension-inject/types';
+import { web3FromAddress } from '@polkadot/extension-dapp';
+import { toast } from 'sonner';
+
+export interface TransactionStatus {
+  status: 'idle' | 'signing' | 'submitting' | 'inBlock' | 'finalized' | 'error';
+  message: string;
+  blockHash?: string;
+  error?: string;
+}
+
+export interface TransactionResult {
+  success: boolean;
+  blockHash?: string;
+  transactionHash?: string;
+  error?: string;
+}
+
+/**
+ * Submit a transaction with proper error handling and status updates
+ */
+export async function submitTransaction(
+  api: ApiPromise,
+  account: InjectedAccountWithMeta | { address: string },
+  extrinsic: any,
+  onStatusUpdate?: (status: TransactionStatus) => void
+): Promise<TransactionResult> {
+  try {
+    // Get the injector for signing
+    onStatusUpdate?.({
+      status: 'signing',
+      message: 'Waiting for signature...',
+    });
+
+    const injector = await web3FromAddress(account.address);
+
+    let blockHash: string | undefined;
+    let txHash: string | undefined;
+
+    // Submit the transaction
+    onStatusUpdate?.({
+      status: 'submitting',
+      message: 'Submitting transaction...',
+    });
+
+    const unsub = await extrinsic.signAndSend(
+      account.address,
+      { signer: injector.signer },
+      ({ status, events, dispatchError }: any) => {
+        if (status.isInBlock) {
+          blockHash = status.asInBlock.toHex();
+          txHash = extrinsic.hash.toHex();
+          
+          onStatusUpdate?.({
+            status: 'inBlock',
+            message: 'Transaction included in block',
+            blockHash,
+          });
+        }
+
+        if (status.isFinalized) {
+          // Check for errors in events
+          let hasError = false;
+          let errorMessage = '';
+
+          events.forEach(({ event }: any) => {
+            if (api.events.system.ExtrinsicFailed.is(event)) {
+              hasError = true;
+              const [dispatchError] = event.data;
+              
+              if (dispatchError.isModule) {
+                const decoded = api.registry.findMetaError(dispatchError.asModule);
+                errorMessage = `${decoded.section}.${decoded.name}: ${decoded.docs.join(' ')}`;
+              } else {
+                errorMessage = dispatchError.toString();
+              }
+            }
+          });
+
+          if (hasError) {
+            onStatusUpdate?.({
+              status: 'error',
+              message: 'Transaction failed',
+              error: errorMessage,
+            });
+            unsub();
+            return;
+          }
+
+          onStatusUpdate?.({
+            status: 'finalized',
+            message: 'Transaction finalized',
+            blockHash: status.asFinalized.toHex(),
+          });
+
+          unsub();
+        }
+      }
+    );
+
+    // Wait for finalization
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('Transaction timeout'));
+      }, 60000); // 60 second timeout
+
+      const checkStatus = setInterval(() => {
+        if (blockHash) {
+          clearTimeout(timeout);
+          clearInterval(checkStatus);
+          resolve(true);
+        }
+      }, 100);
+    });
+
+    return {
+      success: true,
+      blockHash,
+      transactionHash: txHash,
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    
+    onStatusUpdate?.({
+      status: 'error',
+      message: 'Transaction failed',
+      error: errorMessage,
+    });
+
+    return {
+      success: false,
+      error: errorMessage,
+    };
+  }
+}
+
+/**
+ * DID Pallet Transactions
+ */
+export class DIDTransactions {
+  constructor(private api: ApiPromise) {}
+
+  async createDID(
+    account: InjectedAccountWithMeta | { address: string },
+    publicKey: Uint8Array,
+    keyType: 'Ed25519' | 'Sr25519' | 'ECDSA',
+    onStatusUpdate?: (status: TransactionStatus) => void
+  ): Promise<TransactionResult> {
+    const tx = this.api.tx.did.createDid(publicKey, keyType);
+    return submitTransaction(this.api, account, tx, onStatusUpdate);
+  }
+
+  async registerInstitution(
+    account: InjectedAccountWithMeta | { address: string },
+    name: string,
+    onStatusUpdate?: (status: TransactionStatus) => void
+  ): Promise<TransactionResult> {
+    const tx = this.api.tx.did.registerInstitution(name);
+    return submitTransaction(this.api, account, tx, onStatusUpdate);
+  }
+
+  async addPublicKey(
+    account: InjectedAccountWithMeta | { address: string },
+    publicKey: Uint8Array,
+    keyType: 'Ed25519' | 'Sr25519' | 'ECDSA',
+    onStatusUpdate?: (status: TransactionStatus) => void
+  ): Promise<TransactionResult> {
+    const tx = this.api.tx.did.addPublicKey(publicKey, keyType);
+    return submitTransaction(this.api, account, tx, onStatusUpdate);
+  }
+}
+
+/**
+ * Credential Pallet Transactions
+ */
+export class CredentialTransactions {
+  constructor(private api: ApiPromise) {}
+
+  async issueCredential(
+    account: InjectedAccountWithMeta | { address: string },
+    holder: string,
+    credentialHash: string,
+    credentialType: string,
+    metadata: string,
+    expiresAt: number | null,
+    onStatusUpdate?: (status: TransactionStatus) => void
+  ): Promise<TransactionResult> {
+    const tx = this.api.tx.credential.issueCredential(
+      holder,
+      credentialHash,
+      credentialType,
+      metadata,
+      expiresAt
+    );
+    return submitTransaction(this.api, account, tx, onStatusUpdate);
+  }
+
+  async revokeCredential(
+    account: InjectedAccountWithMeta | { address: string },
+    credentialId: string,
+    onStatusUpdate?: (status: TransactionStatus) => void
+  ): Promise<TransactionResult> {
+    const tx = this.api.tx.credential.revokeCredential(credentialId);
+    return submitTransaction(this.api, account, tx, onStatusUpdate);
+  }
+
+  async verifyCredential(
+    account: InjectedAccountWithMeta | { address: string },
+    credentialHash: string,
+    onStatusUpdate?: (status: TransactionStatus) => void
+  ): Promise<TransactionResult> {
+    const tx = this.api.tx.credential.verifyCredential(credentialHash);
+    return submitTransaction(this.api, account, tx, onStatusUpdate);
+  }
+}
+
+/**
+ * Reputation Pallet Transactions
+ */
+export class ReputationTransactions {
+  constructor(private api: ApiPromise) {}
+
+  async endorse(
+    account: InjectedAccountWithMeta | { address: string },
+    endorsee: string,
+    endorsementType: string,
+    comment: string,
+    weight: number,
+    onStatusUpdate?: (status: TransactionStatus) => void
+  ): Promise<TransactionResult> {
+    const tx = this.api.tx.reputation.endorse(
+      endorsee,
+      endorsementType,
+      comment,
+      weight
+    );
+    return submitTransaction(this.api, account, tx, onStatusUpdate);
+  }
 }
 </file>
 
@@ -5776,6 +6689,52 @@ export const FILE_UPLOAD = {
   MAX_SIZE: 10 * 1024 * 1024, // 10MB
   ACCEPTED_TYPES: ['application/pdf', 'image/png', 'image/jpeg'],
 } as const;
+</file>
+
+<file path="src/lib/utils/env.ts">
+// src/lib/utils/env.ts
+/**
+ * Environment configuration helper
+ */
+
+export const ENV = {
+    // Blockchain
+    WS_PROVIDER: import.meta.env.VITE_WS_PROVIDER || 'ws://127.0.0.1:9944',
+    CHAIN_NAME: import.meta.env.VITE_CHAIN_NAME || 'Academic Verification Chain',
+    TOKEN_SYMBOL: import.meta.env.VITE_TOKEN_SYMBOL || 'AVC',
+    TOKEN_DECIMALS: parseInt(import.meta.env.VITE_TOKEN_DECIMALS || '12'),
+  
+    // App
+    APP_NAME: import.meta.env.VITE_APP_NAME || 'Academic Verify',
+    APP_VERSION: import.meta.env.VITE_APP_VERSION || '1.0.0',
+  
+    // Features
+    ENABLE_DEMO_MODE: import.meta.env.VITE_ENABLE_DEMO_MODE === 'true',
+    DEMO_CREDENTIALS: import.meta.env.VITE_DEMO_CREDENTIALS === 'true',
+  
+    // Development
+    isDevelopment: import.meta.env.DEV,
+    isProduction: import.meta.env.PROD,
+    
+    // Testnet endpoints (for future use)
+    TESTNET_WS: import.meta.env.VITE_TESTNET_WS || '',
+    TESTNET_EXPLORER: import.meta.env.VITE_TESTNET_EXPLORER || '',
+  } as const;
+  
+  // Validate required environment variables
+  export function validateEnv() {
+    const required = ['WS_PROVIDER'];
+    const missing = required.filter(key => !ENV[key as keyof typeof ENV]);
+  
+    if (missing.length > 0) {
+      console.warn('Missing environment variables:', missing);
+    }
+  
+    return missing.length === 0;
+  }
+  
+  // Export typed env for use in app
+  export type AppEnv = typeof ENV;
 </file>
 
 <file path="src/pages/CreateDIDPage.tsx">
@@ -8109,6 +9068,89 @@ export function WalletProvider({ children }: WalletProviderProps) {
 }
 </file>
 
+<file path="src/store/credentialRequests.store.ts">
+// src/store/credentialRequests.store.ts
+import { create } from 'zustand';
+import type { CredentialRequest, RequestStatus } from '@/types/credentialRequest.types';
+
+interface CredentialRequestsState {
+  myRequests: CredentialRequest[];
+  receivedRequests: CredentialRequest[];
+  loading: boolean;
+
+  setMyRequests: (requests: CredentialRequest[]) => void;
+  setReceivedRequests: (requests: CredentialRequest[]) => void;
+  addRequest: (request: CredentialRequest) => void;
+  updateRequest: (id: string, updates: Partial<CredentialRequest>) => void;
+  removeRequest: (id: string) => void;
+  setLoading: (loading: boolean) => void;
+
+  // Helper methods
+  getPendingCount: () => number;
+  getRequestById: (id: string) => CredentialRequest | undefined;
+  getRequestsByStatus: (status: RequestStatus) => CredentialRequest[];
+}
+
+export const useCredentialRequestsStore = create<CredentialRequestsState>((set, get) => ({
+  myRequests: [],
+  receivedRequests: [],
+  loading: false,
+
+  setMyRequests: (requests) => {
+    set({ myRequests: requests });
+  },
+
+  setReceivedRequests: (requests) => {
+    set({ receivedRequests: requests });
+  },
+
+  addRequest: (request) => {
+    set((state) => ({
+      myRequests: [...state.myRequests, request],
+    }));
+  },
+
+  updateRequest: (id, updates) => {
+    set((state) => ({
+      myRequests: state.myRequests.map((req) =>
+        req.id === id ? { ...req, ...updates, updatedAt: Date.now() } : req
+      ),
+      receivedRequests: state.receivedRequests.map((req) =>
+        req.id === id ? { ...req, ...updates, updatedAt: Date.now() } : req
+      ),
+    }));
+  },
+
+  removeRequest: (id) => {
+    set((state) => ({
+      myRequests: state.myRequests.filter((req) => req.id !== id),
+      receivedRequests: state.receivedRequests.filter((req) => req.id !== id),
+    }));
+  },
+
+  setLoading: (loading) => {
+    set({ loading });
+  },
+
+  getPendingCount: () => {
+    return get().receivedRequests.filter((req) => req.status === 'pending').length;
+  },
+
+  getRequestById: (id) => {
+    const state = get();
+    return state.myRequests.find((req) => req.id === id) ||
+           state.receivedRequests.find((req) => req.id === id);
+  },
+
+  getRequestsByStatus: (status) => {
+    const state = get();
+    return [...state.myRequests, ...state.receivedRequests].filter(
+      (req) => req.status === status
+    );
+  },
+}));
+</file>
+
 <file path="src/store/credentials.store.ts">
 // credentials.store.ts
 import { create } from 'zustand';
@@ -8829,6 +9871,29 @@ createRoot(document.getElementById('root')!).render(
 /// <reference types="vite/client" />
 
 declare module '*.css';
+</file>
+
+<file path=".env.example">
+// .env.example
+# Blockchain Connection
+# For local development, use local node
+VITE_WS_PROVIDER=ws://127.0.0.1:9944
+
+# For testnet deployment (update when ready)
+# VITE_WS_PROVIDER=wss://your-testnet-url.com
+
+# Chain Configuration
+VITE_CHAIN_NAME=Academic Verification Chain
+VITE_TOKEN_SYMBOL=AVC
+VITE_TOKEN_DECIMALS=12
+
+# Application
+VITE_APP_NAME=Academic Verify
+VITE_APP_VERSION=1.0.0
+
+# Features (enable/disable features)
+VITE_ENABLE_DEMO_MODE=true
+VITE_DEMO_CREDENTIALS=true
 </file>
 
 <file path=".gitignore">
