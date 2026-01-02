@@ -1,4 +1,4 @@
-// src/hooks/blockchain/useBlockchain.ts
+// src/hooks/blockchain/useBlockchain.ts - UPDATED
 import { useMemo } from 'react';
 import { usePolkadotContext } from '@/providers/PolkadotProvider';
 import { useWalletStore } from '@/store/wallet.store';
@@ -7,11 +7,11 @@ import {
   CredentialTransactions, 
   ReputationTransactions 
 } from '@/lib/blockchain/transactions';
-import { BlockchainQueries } from '@/lib/blockchain/queries';
+import { RealBlockchainQueries } from '@/lib/blockchain/realQueries';
 
 /**
  * Main hook for blockchain interactions
- * Provides transaction and query helpers
+ * Provides transaction and query helpers with REAL blockchain data
  */
 export function useBlockchain() {
   const { api, isReady } = usePolkadotContext();
@@ -30,7 +30,7 @@ export function useBlockchain() {
   const queries = useMemo(() => {
     if (!api || !isReady) return null;
 
-    return new BlockchainQueries(api);
+    return new RealBlockchainQueries(api);
   }, [api, isReady]);
 
   return {

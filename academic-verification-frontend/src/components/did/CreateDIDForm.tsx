@@ -2,12 +2,13 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Key, Copy, Download, Eye, EyeOff, AlertTriangle, CheckCircle2, Loader2 } from 'lucide-react';
+import { Key, Copy, Download, Eye, EyeOff, AlertTriangle, CheckCircle2, Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../ui/Card';
 import { Input } from '../ui/Input';
 import { Badge } from '../ui/Badge';
 import { toast } from 'sonner';
+import { mnemonicGenerate } from '@polkadot/util-crypto';
 
 // Form validation schema
 const createDIDSchema = z.object({
@@ -66,18 +67,21 @@ export default function CreateDIDForm({ onSuccess, onCancel }: CreateDIDFormProp
 
   const selectedKeyType = watch('keyType');
 
-  // Generate keys
+  // Generate keys with randomized mnemonic
   const generateKeys = async () => {
     try {
       setStep('generate');
       
+      // Generate a random 12-word mnemonic using Polkadot's crypto utilities
+      const mnemonic = mnemonicGenerate(12);
+      
       // Simulate key generation (replace with actual Polkadot key generation)
       await new Promise(resolve => setTimeout(resolve, 1000));
       
-      // Mock generated keys (replace with actual generation)
+      // Mock generated keys (in production, derive these from the mnemonic)
       const mockKeys = {
         publicKey: '0x' + Array(64).fill(0).map(() => Math.floor(Math.random() * 16).toString(16)).join(''),
-        mnemonic: 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about',
+        mnemonic: mnemonic,
         address: '5' + Array(47).fill(0).map(() => 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'[Math.floor(Math.random() * 62)]).join(''),
       };
       
@@ -89,6 +93,12 @@ export default function CreateDIDForm({ onSuccess, onCancel }: CreateDIDFormProp
       toast.error('Failed to generate keys');
       setStep('select');
     }
+  };
+
+  // Regenerate keys (create new random mnemonic)
+  const regenerateKeys = async () => {
+    toast.info('Generating new keys...');
+    await generateKeys();
   };
 
   // Copy to clipboard
@@ -201,7 +211,7 @@ export default function CreateDIDForm({ onSuccess, onCancel }: CreateDIDFormProp
               <div className="text-sm">
                 <p className="font-semibold text-yellow-800 dark:text-yellow-400">Important Security Notice</p>
                 <p className="text-yellow-700 dark:text-yellow-300 mt-1">
-                  You will receive a recovery phrase. Write it down and store it safely. 
+                  You will receive a randomly generated recovery phrase. Write it down and store it safely. 
                   Anyone with this phrase can control your DID.
                 </p>
               </div>
@@ -231,7 +241,7 @@ export default function CreateDIDForm({ onSuccess, onCancel }: CreateDIDFormProp
           <div className="text-center space-y-4">
             <Loader2 className="h-12 w-12 animate-spin mx-auto text-primary" />
             <h3 className="text-xl font-semibold">Generating Your Keys...</h3>
-            <p className="text-muted-foreground">This will only take a moment</p>
+            <p className="text-muted-foreground">Creating a secure random seed phrase</p>
           </div>
         </CardContent>
       </Card>
@@ -292,9 +302,20 @@ export default function CreateDIDForm({ onSuccess, onCancel }: CreateDIDFormProp
 
           {/* Recovery Phrase */}
           <div>
-            <label className="text-sm font-semibold mb-2 block">
-              Recovery Phrase (Mnemonic)
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-sm font-semibold">
+                Recovery Phrase (Mnemonic)
+              </label>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={regenerateKeys}
+                className="text-xs"
+              >
+                <RefreshCw className="h-3 w-3 mr-1" />
+                Generate New
+              </Button>
+            </div>
             <div className="space-y-2">
               <div className="relative">
                 <Input 
@@ -322,6 +343,9 @@ export default function CreateDIDForm({ onSuccess, onCancel }: CreateDIDFormProp
                   </Button>
                 </div>
               </div>
+              <p className="text-xs text-muted-foreground">
+                This is a randomly generated 12-word phrase. Click "Generate New" to create a different one.
+              </p>
             </div>
           </div>
 
@@ -346,6 +370,7 @@ export default function CreateDIDForm({ onSuccess, onCancel }: CreateDIDFormProp
                   <li>Store it in a secure location (password manager, safe, etc.)</li>
                   <li>If you lose it, you cannot recover your DID</li>
                   <li>Anyone with this phrase can control your DID</li>
+                  <li>You can generate a new phrase if you're not satisfied with this one</li>
                 </ul>
               </div>
             </div>

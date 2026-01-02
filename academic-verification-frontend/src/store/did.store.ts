@@ -1,5 +1,6 @@
-// did.store.ts
+// src/store/did.store.ts - Updated with persistence
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import { DID_STATUS } from '@/lib/utils/constants';
 
 interface PublicKey {
@@ -23,52 +24,14 @@ interface DIDState {
   addPublicKey: (key: PublicKey) => void;
   removePublicKey: (keyId: string) => void;
   clearDID: () => void;
+  // New methods for checking DID existence
+  checkDIDExists: () => boolean;
+  loadDIDFromStorage: () => void;
 }
 
-export const useDIDStore = create<DIDState>((set) => ({
-  hasDID: false,
-  status: DID_STATUS.NONE,
-  didAddress: null,
-  publicKeys: [],
-  isInstitution: false,
-  institutionName: null,
-  createdAt: null,
-
-  setDID: (didAddress, publicKeys) => {
-    set({
-      hasDID: true,
-      didAddress,
-      publicKeys,
-      status: DID_STATUS.ACTIVE,
-      createdAt: Date.now(),
-    });
-  },
-
-  setInstitution: (name) => {
-    set({
-      isInstitution: true,
-      institutionName: name,
-    });
-  },
-
-  setStatus: (status) => {
-    set({ status });
-  },
-
-  addPublicKey: (key) => {
-    set((state) => ({
-      publicKeys: [...state.publicKeys, key],
-    }));
-  },
-
-  removePublicKey: (keyId) => {
-    set((state) => ({
-      publicKeys: state.publicKeys.filter(key => key.id !== keyId),
-    }));
-  },
-
-  clearDID: () => {
-    set({
+export const useDIDStore = create<DIDState>()(
+  persist(
+    (set, get) => ({
       hasDID: false,
       status: DID_STATUS.NONE,
       didAddress: null,
@@ -76,6 +39,78 @@ export const useDIDStore = create<DIDState>((set) => ({
       isInstitution: false,
       institutionName: null,
       createdAt: null,
-    });
-  },
-}));
+
+      setDID: (didAddress, publicKeys) => {
+        set({
+          hasDID: true,
+          didAddress,
+          publicKeys,
+          status: DID_STATUS.ACTIVE,
+          createdAt: Date.now(),
+        });
+      },
+
+      setInstitution: (name) => {
+        set({
+          isInstitution: true,
+          institutionName: name,
+        });
+      },
+
+      setStatus: (status) => {
+        set({ status });
+      },
+
+      addPublicKey: (key) => {
+        set((state) => ({
+          publicKeys: [...state.publicKeys, key],
+        }));
+      },
+
+      removePublicKey: (keyId) => {
+        set((state) => ({
+          publicKeys: state.publicKeys.filter(key => key.id !== keyId),
+        }));
+      },
+
+      clearDID: () => {
+        set({
+          hasDID: false,
+          status: DID_STATUS.NONE,
+          didAddress: null,
+          publicKeys: [],
+          isInstitution: false,
+          institutionName: null,
+          createdAt: null,
+        });
+      },
+
+      checkDIDExists: () => {
+        const state = get();
+        return state.hasDID && state.didAddress !== null;
+      },
+
+      loadDIDFromStorage: () => {
+        // This will be called automatically by the persist middleware
+        // but we can also call it manually if needed
+        const state = get();
+        if (state.didAddress) {
+          console.log('✅ DID loaded from storage:', state.didAddress);
+        }
+      },
+    }),
+    {
+      name: 'academic-verify-did-storage', // unique name for localStorage key
+      // Optionally, you can customize what gets persisted
+      partialize: (state) => ({
+        hasDID: state.hasDID,
+        status: state.status,
+        didAddress: state.didAddress,
+        publicKeys: state.publicKeys,
+        isInstitution: state.isInstitution,
+        institutionName: state.institutionName,
+        createdAt: state.createdAt,
+      }),
+    }
+  )
+);
