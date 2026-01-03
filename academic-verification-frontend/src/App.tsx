@@ -1,4 +1,4 @@
-// src/App.tsx (Updated with new routes)
+// src/App.tsx - Complete with Admin Route
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
@@ -18,10 +18,9 @@ import Verify from './pages/Verify';
 import Institutions from './pages/Institutions';
 import Settings from './pages/Settings';
 import CreateDIDPage from './pages/CreateDIDPage';
-
-// New Request Pages
 import MyRequests from './pages/MyRequests';
 import InstitutionRequests from './pages/InstitutionRequests';
+import AdminVerification from './pages/AdminVerification';
 
 // Error Boundary
 import ErrorBoundary from './components/error/ErrorBoundary';
@@ -80,6 +79,9 @@ function App() {
                     <Route path="/institution/issue" element={<IssueCredential />} />
                     <Route path="/institution/issued" element={<IssuedCredentials />} />
                     <Route path="/institution/requests" element={<InstitutionRequests />} />
+                    
+                    {/* Admin Routes */}
+                    <Route path="/admin/verify-institutions" element={<AdminVerification />} />
                   </Routes>
                 </MainLayout>
               </Suspense>

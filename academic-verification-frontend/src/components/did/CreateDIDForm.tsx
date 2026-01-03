@@ -8,7 +8,12 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../ui
 import { Input } from '../ui/Input';
 import { Badge } from '../ui/Badge';
 import { toast } from 'sonner';
-import { mnemonicGenerate } from '@polkadot/util-crypto';
+import { mnemonicGenerate, mnemonicToMiniSecret, naclKeypairFromSeed } from '@polkadot/util-crypto';
+import { u8aToHex } from '@polkadot/util';
+import { Keyring } from '@polkadot/keyring';
+import { useBlockchain } from '@/hooks/blockchain/useBlockchain';
+import { useWalletStore } from '@/store/wallet.store';
+import { useDIDStore } from '@/store/did.store';
 
 // Form validation schema
 const createDIDSchema = z.object({
@@ -56,6 +61,11 @@ export default function CreateDIDForm({ onSuccess, onCancel }: CreateDIDFormProp
   } | null>(null);
   const [showMnemonic, setShowMnemonic] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [transactionStatus, setTransactionStatus] = useState('');
+
+  const { account } = useWalletStore();
+  const { transactions, isReady } = useBlockchain();
+  const { setDID } = useDIDStore();
 
   const { register, handleSubmit, watch, formState: { errors } } = useForm<CreateDIDFormData>({
     resolver: zodResolver(createDIDSchema),
@@ -67,25 +77,37 @@ export default function CreateDIDForm({ onSuccess, onCancel }: CreateDIDFormProp
 
   const selectedKeyType = watch('keyType');
 
-  // Generate keys with randomized mnemonic
+  // Generate keys with real Polkadot keypair
   const generateKeys = async () => {
     try {
       setStep('generate');
       
-      // Generate a random 12-word mnemonic using Polkadot's crypto utilities
+      // Generate a random 12-word mnemonic
       const mnemonic = mnemonicGenerate(12);
       
-      // Simulate key generation (replace with actual Polkadot key generation)
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise(resolve => setTimeout(resolve, 500));
       
-      // Mock generated keys (in production, derive these from the mnemonic)
-      const mockKeys = {
-        publicKey: '0x' + Array(64).fill(0).map(() => Math.floor(Math.random() * 16).toString(16)).join(''),
+      // Create keyring with the selected key type
+      const keyring = new Keyring({ 
+        type: selectedKeyType.toLowerCase() as 'ed25519' | 'sr25519' | 'ecdsa' 
+      });
+      
+      // Create keypair from mnemonic
+      const pair = keyring.addFromMnemonic(mnemonic);
+      
+      const keys = {
+        publicKey: u8aToHex(pair.publicKey),
         mnemonic: mnemonic,
-        address: '5' + Array(47).fill(0).map(() => 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'[Math.floor(Math.random() * 62)]).join(''),
+        address: pair.address,
       };
       
-      setGeneratedKeys(mockKeys);
+      console.log('Generated keys:', {
+        address: keys.address,
+        publicKey: keys.publicKey,
+        keyType: selectedKeyType,
+      });
+      
+      setGeneratedKeys(keys);
       setStep('backup');
       toast.success('Keys generated successfully');
     } catch (error) {
@@ -95,7 +117,7 @@ export default function CreateDIDForm({ onSuccess, onCancel }: CreateDIDFormProp
     }
   };
 
-  // Regenerate keys (create new random mnemonic)
+  // Regenerate keys
   const regenerateKeys = async () => {
     toast.info('Generating new keys...');
     await generateKeys();
@@ -135,28 +157,88 @@ export default function CreateDIDForm({ onSuccess, onCancel }: CreateDIDFormProp
 
   // Submit DID creation to blockchain
   const onSubmit = async (data: CreateDIDFormData) => {
-    if (!generatedKeys) return;
+    if (!generatedKeys || !account || !transactions || !isReady) {
+      toast.error('Wallet not connected or blockchain not ready');
+      return;
+    }
     
     setIsSubmitting(true);
     
     try {
-      // TODO: Replace with actual blockchain transaction
-      console.log('Creating DID with:', {
-        keyType: data.keyType,
+      console.log('🚀 Submitting DID creation to blockchain...');
+      
+      // Convert hex public key to Uint8Array
+      const publicKeyHex = generatedKeys.publicKey.startsWith('0x') 
+        ? generatedKeys.publicKey.slice(2) 
+        : generatedKeys.publicKey;
+      
+      const publicKeyBytes = new Uint8Array(
+        publicKeyHex.match(/.{1,2}/g)!.map(byte => parseInt(byte, 16))
+      );
+
+      console.log('📝 Transaction details:', {
+        from: account.address,
         publicKey: generatedKeys.publicKey,
-        address: generatedKeys.address,
+        keyType: data.keyType,
       });
+
+      // Call the blockchain transaction with status updates
+      const result = await transactions.did.createDID(
+        account,
+        publicKeyBytes,
+        data.keyType,
+        (status) => {
+          console.log('Transaction status:', status);
+          setTransactionStatus(status.message);
+          
+          if (status.status === 'signing') {
+            toast.info('Please sign the transaction in your wallet');
+          } else if (status.status === 'inBlock') {
+            toast.info('Transaction included in block');
+          }
+        }
+      );
+
+      if (result.success) {
+        console.log('✅ DID created successfully!', result);
+        
+        // Update DID store
+        setDID(generatedKeys.address, [{
+          id: 'primary_key',
+          keyType: data.keyType,
+          publicKey: generatedKeys.publicKey,
+          addedAt: Date.now(),
+        }]);
+        
+        toast.success('DID created successfully!', {
+          description: `Block: ${result.blockHash?.slice(0, 10)}...`,
+        });
+        
+        onSuccess?.(generatedKeys.address);
+      } else {
+        throw new Error(result.error || 'Transaction failed');
+      }
+    } catch (error: any) {
+      console.error('❌ Failed to create DID:', error);
       
-      // Simulate transaction
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      let errorMessage = 'Failed to create DID';
       
-      toast.success('DID created successfully!');
-      onSuccess?.(generatedKeys.address);
-    } catch (error) {
-      console.error('Failed to create DID:', error);
-      toast.error('Failed to create DID. Please try again.');
+      if (error.message?.includes('1010')) {
+        errorMessage = 'Insufficient balance for transaction fee';
+      } else if (error.message?.includes('rejected')) {
+        errorMessage = 'Transaction was rejected';
+      } else if (error.message?.includes('DidAlreadyExists')) {
+        errorMessage = 'DID already exists for this account';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      toast.error(errorMessage, {
+        description: 'Please check your balance and try again',
+      });
     } finally {
       setIsSubmitting(false);
+      setTransactionStatus('');
     }
   };
 
@@ -174,6 +256,35 @@ export default function CreateDIDForm({ onSuccess, onCancel }: CreateDIDFormProp
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
+          {/* Connection Check */}
+          {!account && (
+            <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
+              <div className="flex items-start space-x-3">
+                <AlertTriangle className="h-5 w-5 text-yellow-600 dark:text-yellow-500 flex-shrink-0 mt-0.5" />
+                <div className="text-sm">
+                  <p className="font-semibold text-yellow-800 dark:text-yellow-400">Wallet Not Connected</p>
+                  <p className="text-yellow-700 dark:text-yellow-300 mt-1">
+                    Please connect your wallet first to create a DID.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {!isReady && (
+            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+              <div className="flex items-start space-x-3">
+                <Loader2 className="h-5 w-5 animate-spin text-blue-600 dark:text-blue-500 flex-shrink-0 mt-0.5" />
+                <div className="text-sm">
+                  <p className="font-semibold text-blue-800 dark:text-blue-400">Connecting to Blockchain</p>
+                  <p className="text-blue-700 dark:text-blue-300 mt-1">
+                    Please wait while we connect to the blockchain...
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="space-y-3">
             {KEY_TYPES.map((type) => (
               <label
@@ -224,7 +335,11 @@ export default function CreateDIDForm({ onSuccess, onCancel }: CreateDIDFormProp
                 Cancel
               </Button>
             )}
-            <Button onClick={generateKeys} className="ml-auto">
+            <Button 
+              onClick={generateKeys} 
+              className="ml-auto"
+              disabled={!account || !isReady}
+            >
               Continue
             </Button>
           </div>
@@ -392,6 +507,18 @@ export default function CreateDIDForm({ onSuccess, onCancel }: CreateDIDFormProp
             <p className="text-sm text-red-600">{errors.backupConfirmed.message}</p>
           )}
 
+          {/* Transaction Status */}
+          {transactionStatus && (
+            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+              <div className="flex items-center space-x-3">
+                <Loader2 className="h-5 w-5 animate-spin text-blue-600 dark:text-blue-500" />
+                <p className="text-sm font-medium text-blue-800 dark:text-blue-400">
+                  {transactionStatus}
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Actions */}
           <div className="flex justify-between pt-4">
             <Button 
@@ -400,12 +527,13 @@ export default function CreateDIDForm({ onSuccess, onCancel }: CreateDIDFormProp
                 setStep('select');
                 setGeneratedKeys(null);
               }}
+              disabled={isSubmitting}
             >
               Start Over
             </Button>
             <Button
               onClick={handleSubmit(onSubmit)}
-              disabled={isSubmitting}
+              disabled={isSubmitting || !isReady}
             >
               {isSubmitting ? (
                 <>

@@ -1,9 +1,10 @@
-// src/providers/WalletProvider.tsx - Updated with DID checking
+// src/providers/WalletProvider.tsx - FIXED VERSION
 import { createContext, useContext, ReactNode, useEffect } from 'react';
 import { useWalletStore } from '@/store/wallet.store';
 import { useDIDStore } from '@/store/did.store';
 import { usePolkadotContext } from './PolkadotProvider';
 import { toast } from 'sonner';
+import { hexToString } from '@polkadot/util';
 
 interface WalletContextType {
   enableWallet: () => Promise<void>;
@@ -30,7 +31,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
       try {
         const { web3Enable, web3Accounts } = await import('@polkadot/extension-dapp');
         
-        // Check if extension is already authorized
         const extensions = await web3Enable('Academic Verify');
         
         if (extensions.length > 0) {
@@ -56,7 +56,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
               })),
             });
 
-            // After wallet connects, check for DID on blockchain
             if (isReady && api) {
               checkDIDOnBlockchain(account.address);
             }
@@ -70,7 +69,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
     checkConnection();
   }, [isReady, api]);
 
-  // Check if DID exists on blockchain when wallet connects or blockchain becomes ready
   useEffect(() => {
     const { account } = useWalletStore.getState();
     if (isReady && api && account?.address) {
@@ -78,21 +76,47 @@ export function WalletProvider({ children }: WalletProviderProps) {
     }
   }, [isReady, api]);
 
-  // Function to check if DID exists on blockchain
+  // Helper function to decode hex-encoded institution names
+  const decodeInstitutionName = (name: string | any): string => {
+    try {
+      // If it's already a string and doesn't start with 0x, return as-is
+      if (typeof name === 'string' && !name.startsWith('0x')) {
+        return name;
+      }
+
+      // If it's a hex string (starts with 0x)
+      if (typeof name === 'string' && name.startsWith('0x')) {
+        const decoded = hexToString(name);
+        // Remove any null bytes
+        return decoded.replace(/\0/g, '');
+      }
+
+      // If it's a Uint8Array or array-like
+      if (name && (name instanceof Uint8Array || Array.isArray(name))) {
+        const nameStr = String.fromCharCode(...Array.from(name));
+        return nameStr.replace(/\0/g, '');
+      }
+
+      // Fallback
+      return String(name);
+    } catch (error) {
+      console.error('Error decoding institution name:', error);
+      return String(name);
+    }
+  };
+
   const checkDIDOnBlockchain = async (address: string) => {
     if (!api || !isReady) return;
 
     try {
       console.log('🔍 Checking for existing DID on blockchain for:', address);
 
-      // Query the blockchain for DID
       const didDoc = await api.query.did?.didDocuments(address);
       
       if (didDoc && !didDoc.isEmpty) {
         const didData = didDoc.toJSON() as any;
         console.log('✅ Found existing DID on blockchain:', didData);
 
-        // Update DID store with blockchain data
         const publicKeys = didData.publicKeys?.map((key: any, index: number) => ({
           id: key.keyId || `key_${index}`,
           keyType: key.keyType || 'Ed25519',
@@ -107,17 +131,25 @@ export function WalletProvider({ children }: WalletProviderProps) {
         const institution = await api.query.did?.institutions(address);
         if (institution && !institution.isEmpty) {
           const instData = institution.toJSON() as any;
-          console.log('🏛️ Found institution data:', instData);
-          useDIDStore.getState().setInstitution(instData.name || 'Institution');
+          console.log('🏛️ Found institution data (raw):', instData);
+          
+          // Decode the institution name properly
+          const decodedName = decodeInstitutionName(instData.name);
+          console.log('✅ Decoded institution name:', decodedName);
+          
+          useDIDStore.getState().setInstitution(decodedName);
+          
+          toast.success('Institution loaded', {
+            description: `Welcome back, ${decodedName}`,
+          });
+        } else {
+          toast.success('DID loaded from blockchain', {
+            description: `Found your existing DID: ${address.slice(0, 8)}...`,
+          });
         }
-
-        toast.success('DID loaded from blockchain', {
-          description: `Found your existing DID: ${address.slice(0, 8)}...`,
-        });
       } else {
         console.log('ℹ️ No DID found on blockchain for this address');
         
-        // Check local storage for DID (in case blockchain is unavailable)
         const localDID = useDIDStore.getState();
         if (localDID.didAddress === address && localDID.hasDID) {
           console.log('📦 Using DID from local storage');
@@ -125,14 +157,12 @@ export function WalletProvider({ children }: WalletProviderProps) {
             description: 'Blockchain connection unavailable',
           });
         } else {
-          // Clear any stale DID data
           useDIDStore.getState().clearDID();
         }
       }
     } catch (error) {
       console.error('❌ Error checking DID on blockchain:', error);
       
-      // Fall back to local storage
       const localDID = useDIDStore.getState();
       if (localDID.didAddress === address && localDID.hasDID) {
         console.log('📦 Using DID from local storage (blockchain query failed)');
@@ -142,12 +172,10 @@ export function WalletProvider({ children }: WalletProviderProps) {
 
   const enableWallet = async () => {
     try {
-      // Dynamic import to avoid build issues
       const { web3Accounts, web3Enable } = await import('@polkadot/extension-dapp');
       
       console.log('🔌 Attempting to connect to wallet extension...');
       
-      // Request access to extensions
       const extensions = await web3Enable('Academic Verify');
       
       if (extensions.length === 0) {
@@ -164,7 +192,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
 
       console.log(`✅ Found ${extensions.length} wallet extension(s)`);
 
-      // Get all accounts
       const allAccounts = await web3Accounts();
       
       if (allAccounts.length === 0) {
@@ -177,10 +204,8 @@ export function WalletProvider({ children }: WalletProviderProps) {
 
       console.log(`✅ Found ${allAccounts.length} account(s)`);
 
-      // Connect to the first account
       const account = allAccounts[0];
       
-      // Save connection state
       localStorage.setItem('wallet_address', account.address);
       
       useWalletStore.setState({
@@ -201,7 +226,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
         description: `Connected to ${account.meta.name || 'account'}`,
       });
 
-      // Check for existing DID on blockchain
       if (isReady && api) {
         await checkDIDOnBlockchain(account.address);
       }
@@ -241,7 +265,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
         description: `Switched to ${account.name || address.slice(0, 8) + '...'}`,
       });
 
-      // Check for DID on the new account
       if (isReady && api) {
         checkDIDOnBlockchain(address);
       }
