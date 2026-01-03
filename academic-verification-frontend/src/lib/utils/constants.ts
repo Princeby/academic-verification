@@ -37,15 +37,15 @@ export const CREDENTIAL_STATUS = {
 } as const;
 
 // Credential types
-export const CREDENTIAL_TYPES = [
-  'Bachelor\'s Degree',
-  'Master\'s Degree',
-  'Doctorate (PhD)',
-  'Certificate',
-  'Transcript',
-  'Professional Certification',
-  'Other',
-] as const;
+// export const CREDENTIAL_TYPES = [
+//   'Bachelor\'s Degree',
+//   'Master\'s Degree',
+//   'Doctorate (PhD)',
+//   'Certificate',
+//   'Transcript',
+//   'Professional Certification',
+//   'Other',
+// ] as const;
 
 // Institution types
 export const INSTITUTION_TYPES = [
@@ -93,3 +93,35 @@ export const FILE_UPLOAD = {
   MAX_SIZE: 10 * 1024 * 1024, // 10MB
   ACCEPTED_TYPES: ['application/pdf', 'image/png', 'image/jpeg'],
 } as const;
+
+export const CREDENTIAL_TYPES = [
+  'Bachelor\'s Degree',
+  'Master\'s Degree',
+  'Doctorate (PhD)',
+  'Certificate',
+  'Transcript',
+  'Professional Certification',
+  'Other',
+] as const;
+
+// Blockchain enum mapping
+export const CREDENTIAL_TYPE_ENUM_MAP: Record<string, string> = {
+  "Bachelor's Degree": "Degree",
+  "Master's Degree": "MastersDegree",
+  "Doctorate (PhD)": "Doctorate",
+  "Certificate": "Certificate",
+  "Transcript": "Transcript",
+  "Professional Certification": "ProfessionalCertification",
+  "Other": "Other",
+};
+
+// Reverse mapping for displaying blockchain data
+export const CREDENTIAL_TYPE_DISPLAY_MAP: Record<string, string> = {
+  "Degree": "Bachelor's Degree",
+  "MastersDegree": "Master's Degree",
+  "Doctorate": "Doctorate (PhD)",
+  "Certificate": "Certificate",
+  "Transcript": "Transcript",
+  "ProfessionalCertification": "Professional Certification",
+  "Other": "Other",
+};

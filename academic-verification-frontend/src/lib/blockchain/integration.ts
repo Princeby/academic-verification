@@ -2,6 +2,7 @@
 import type { ApiPromise } from '@polkadot/api';
 import { hexToU8a, u8aToHex } from '@polkadot/util';
 import { blake2AsHex } from '@polkadot/util-crypto';
+import { CREDENTIAL_TYPE_DISPLAY_MAP } from '../utils/constants';
 
 /**
  * Generate Blake2 hash from file
@@ -43,42 +44,34 @@ export async function verifyFileHash(file: File, expectedHash: string): Promise<
  * Format blockchain data for UI
  */
 export function formatCredentialData(rawCredential: any) {
-  return {
-    id: rawCredential.credentialId,
-    holder: rawCredential.holder,
-    issuer: rawCredential.issuer,
-    credentialHash: rawCredential.credentialHash,
-    credentialType: formatCredentialType(rawCredential.credentialType),
-    metadata: rawCredential.metadata ? Buffer.from(rawCredential.metadata).toString('utf-8') : undefined,
-    issuedAt: rawCredential.issuedAt,
-    expiresAt: rawCredential.expiresAt || undefined,
-    revoked: rawCredential.status === 'Revoked',
-  };
-}
+    return {
+      id: rawCredential.credentialId,
+      holder: rawCredential.holder,
+      issuer: rawCredential.issuer,
+      credentialHash: rawCredential.credentialHash,
+      credentialType: formatCredentialType(rawCredential.credentialType), // Use helper
+      metadata: rawCredential.metadata ? Buffer.from(rawCredential.metadata).toString('utf-8') : undefined,
+      issuedAt: rawCredential.issuedAt,
+      expiresAt: rawCredential.expiresAt || undefined,
+      revoked: rawCredential.status === 'Revoked',
+    };
+  }
 
 /**
  * Format credential type enum
  */
-function formatCredentialType(type: any): string {
-  if (typeof type === 'string') return type;
-  
-  const typeMap: Record<string, string> = {
-    'Degree': "Bachelor's Degree",
-    'MastersDegree': "Master's Degree",
-    'Doctorate': 'Doctorate (PhD)',
-    'Certificate': 'Certificate',
-    'Transcript': 'Transcript',
-    'ProfessionalCertification': 'Professional Certification',
-    'Other': 'Other',
-  };
-  
-  if (typeof type === 'object') {
-    const key = Object.keys(type)[0];
-    return typeMap[key] || 'Unknown';
+export function formatCredentialType(type: any): string {
+    if (typeof type === 'string') {
+      return CREDENTIAL_TYPE_DISPLAY_MAP[type] || type;
+    }
+    
+    if (typeof type === 'object') {
+      const key = Object.keys(type)[0];
+      return CREDENTIAL_TYPE_DISPLAY_MAP[key] || key;
+    }
+    
+    return 'Unknown';
   }
-  
-  return typeMap[type] || type;
-}
 
 /**
  * Parse metadata string to object

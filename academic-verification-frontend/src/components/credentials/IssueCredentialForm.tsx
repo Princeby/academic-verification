@@ -23,6 +23,7 @@ import { Badge } from '../ui/Badge';
 import { toast } from 'sonner';
 import { CREDENTIAL_TYPES } from '@/lib/utils/constants';
 import { useDIDStore } from '@/store/did.store';
+import { useBlockchain } from '@/hooks/blockchain/useBlockchain';
 
 // Form validation schema
 const issueCredentialSchema = z.object({
@@ -81,6 +82,7 @@ export default function IssueCredentialForm({ onSuccess, onCancel }: IssueCreden
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   const { institutionName, didAddress } = useDIDStore();
+  const { queries, transactions, account, api, isReady } = useBlockchain();
 
   const { 
     register, 
@@ -100,30 +102,55 @@ export default function IssueCredentialForm({ onSuccess, onCancel }: IssueCreden
   const selectedCredentialType = watch('credentialType');
   const recipientDID = watch('recipientDID');
 
-  // Search for recipient DID
+  // Search for recipient DID on blockchain
   const searchRecipient = async () => {
     if (!recipientDID || recipientDID.length < 10) {
       toast.error('Please enter a valid DID address');
       return;
     }
 
+    if (!queries || !isReady) {
+      toast.error('Blockchain not connected');
+      return;
+    }
+
     setIsSearching(true);
     
     try {
-      // TODO: Replace with actual blockchain query
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      console.log('🔍 Searching for DID:', recipientDID);
+
+      // Query blockchain for DID
+      const didDoc = await queries.did.getDID(recipientDID);
       
-      // Mock recipient data
-      const mockRecipient = {
-        name: 'John Doe',
-        status: 'active' as const,
-      };
+      if (!didDoc) {
+        setRecipientInfo({ status: 'not_found' });
+        toast.error('DID not found on blockchain');
+        return;
+      }
+
+      // Check if DID is active
+      if (!didDoc.active) {
+        setRecipientInfo({ status: 'inactive' });
+        toast.warning('This DID is inactive');
+        return;
+      }
+
+      console.log('✅ Found active DID:', didDoc);
       
-      setRecipientInfo(mockRecipient);
-      toast.success('Recipient found!');
-    } catch (error) {
+      setRecipientInfo({
+        name: recipientDID.slice(0, 8) + '...' + recipientDID.slice(-6), // Use truncated address as name
+        status: 'active',
+      });
+      
+      toast.success('Recipient found!', {
+        description: 'DID is active and can receive credentials',
+      });
+    } catch (error: any) {
+      console.error('❌ Failed to search DID:', error);
       setRecipientInfo({ status: 'not_found' });
-      toast.error('Recipient not found');
+      toast.error('Failed to verify DID', {
+        description: error.message || 'Please check the address',
+      });
     } finally {
       setIsSearching(false);
     }
@@ -150,17 +177,36 @@ export default function IssueCredentialForm({ onSuccess, onCancel }: IssueCreden
     setUploadedDocument(file);
     
     // Generate hash
-    const hash = await generateFileHash(file);
-    setDocumentHash(hash);
-    
-    toast.success('Document uploaded successfully');
+    try {
+      const hash = await generateFileHash(file);
+      setDocumentHash(hash);
+      toast.success('Document uploaded successfully');
+    } catch (error) {
+      toast.error('Failed to generate document hash');
+      setUploadedDocument(null);
+    }
   };
 
-  // Generate file hash (mock - replace with actual Blake2)
+  // Generate file hash using Blake2
   const generateFileHash = async (file: File): Promise<string> => {
-    return '0x' + Array(64).fill(0).map(() => 
-      Math.floor(Math.random() * 16).toString(16)
-    ).join('');
+    try {
+      // Import Blake2 from Polkadot util-crypto
+      const { blake2AsHex } = await import('@polkadot/util-crypto');
+      
+      // Read file as ArrayBuffer
+      const arrayBuffer = await file.arrayBuffer();
+      const uint8Array = new Uint8Array(arrayBuffer);
+      
+      // Generate Blake2-256 hash
+      const hash = blake2AsHex(uint8Array, 256);
+      
+      console.log('🔐 Generated Blake2 hash:', hash);
+      
+      return hash;
+    } catch (error) {
+      console.error('Failed to generate hash:', error);
+      throw error;
+    }
   };
 
   // Navigate steps
@@ -198,34 +244,95 @@ export default function IssueCredentialForm({ onSuccess, onCancel }: IssueCreden
     setStep((prev) => Math.max(prev - 1, 1) as 1 | 2 | 3 | 4 | 5);
   };
 
-  // Submit credential
+  // Submit credential to blockchain
   const onSubmit = async (data: IssueCredentialFormData) => {
     if (step !== 5) return;
     
     setIsSubmitting(true);
     
     try {
-      // TODO: Replace with actual blockchain transaction
-      console.log('Issuing credential:', {
-        ...data,
-        issuer: didAddress,
+      if (!transactions || !account || !api) {
+        throw new Error('Blockchain not connected');
+      }
+
+      console.log('🚀 Issuing credential on blockchain...');
+
+      // Prepare metadata as JSON
+      const metadata = JSON.stringify({
+        degreeName: data.degreeName,
+        fieldOfStudy: data.fieldOfStudy,
+        major: data.major,
+        minor: data.minor,
+        graduationDate: data.graduationDate,
+        gpa: data.gpa,
+        honors: data.honors,
+        referenceNumber: data.referenceNumber,
+        notes: data.notes,
+      });
+
+      // Convert expiration date to block number (if provided)
+      let expiresAtBlock: number | null = null;
+      if (data.expirationDate) {
+        const currentBlock = await api.query.system.number();
+        const expirationDate = new Date(data.expirationDate);
+        const currentDate = new Date();
+        const daysDiff = Math.ceil((expirationDate.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24));
+        // Assuming ~6 second blocks, roughly 14,400 blocks per day
+        const blocksToAdd = daysDiff * 14400;
+        expiresAtBlock = currentBlock.toNumber() + blocksToAdd;
+      }
+
+      // Show transaction progress
+      const statusToast = toast.loading('Preparing transaction...');
+
+      // Issue credential transaction
+      const result = await transactions.credential.issueCredential(
+        account,
+        data.recipientDID,
         documentHash,
-        recipientDID: data.recipientDID,
+        data.credentialType,
+        metadata,
+        expiresAtBlock,
+        (status) => {
+          if (status.status === 'signing') {
+            toast.loading('Waiting for signature...', { id: statusToast });
+          } else if (status.status === 'submitting') {
+            toast.loading('Submitting to blockchain...', { id: statusToast });
+          } else if (status.status === 'inBlock') {
+            toast.loading('Transaction in block...', { id: statusToast });
+          } else if (status.status === 'finalized') {
+            toast.dismiss(statusToast);
+          } else if (status.status === 'error') {
+            toast.error(status.message, { id: statusToast });
+          }
+        }
+      );
+
+      if (result.success) {
+        console.log('✅ Credential issued successfully!');
+        console.log('Block hash:', result.blockHash);
+        console.log('Transaction hash:', result.transactionHash);
+
+        toast.success('Credential issued successfully!', {
+          description: `Transaction: ${result.transactionHash?.slice(0, 10)}...`,
+          duration: 5000,
+        });
+        
+        onSuccess?.(result.transactionHash || 'unknown');
+      } else {
+        throw new Error(result.error || 'Transaction failed');
+      }
+    } catch (error: any) {
+      console.error('❌ Failed to issue credential:', error);
+      
+      let errorMessage = 'Failed to issue credential';
+      if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      toast.error(errorMessage, {
+        description: 'Please check the console for details',
       });
-      
-      // Simulate transaction
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      const credentialId = 'cred_' + Date.now();
-      
-      toast.success('Credential issued successfully!', {
-        description: `Credential ID: ${credentialId}`,
-      });
-      
-      onSuccess?.(credentialId);
-    } catch (error) {
-      console.error('Failed to issue credential:', error);
-      toast.error('Failed to issue credential');
     } finally {
       setIsSubmitting(false);
     }
@@ -259,7 +366,7 @@ export default function IssueCredentialForm({ onSuccess, onCancel }: IssueCreden
           <Button
             type="button"
             onClick={searchRecipient}
-            disabled={isSearching}
+            disabled={isSearching || !isReady}
           >
             {isSearching ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -767,6 +874,7 @@ export default function IssueCredentialForm({ onSuccess, onCancel }: IssueCreden
                   type="button"
                   variant="outline"
                   onClick={prevStep}
+                  disabled={isSubmitting}
                 >
                   <ArrowLeft className="h-4 w-4 mr-2" />
                   Previous
@@ -777,6 +885,7 @@ export default function IssueCredentialForm({ onSuccess, onCancel }: IssueCreden
                   type="button"
                   variant="outline"
                   onClick={onCancel}
+                  disabled={isSubmitting}
                 >
                   Cancel
                 </Button>
@@ -788,6 +897,7 @@ export default function IssueCredentialForm({ onSuccess, onCancel }: IssueCreden
                 <Button
                   type="button"
                   onClick={nextStep}
+                  disabled={isSearching || !isReady}
                 >
                   Next
                   <ArrowRight className="h-4 w-4 ml-2" />
@@ -795,7 +905,7 @@ export default function IssueCredentialForm({ onSuccess, onCancel }: IssueCreden
               ) : (
                 <Button
                   type="submit"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || !isReady}
                 >
                   {isSubmitting ? (
                     <>

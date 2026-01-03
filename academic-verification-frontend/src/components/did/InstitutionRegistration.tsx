@@ -1,3 +1,4 @@
+// src/components/did/InstitutionRegistration.tsx - FIXED VERSION
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -23,6 +24,8 @@ import { Badge } from '../ui/Badge';
 import { toast } from 'sonner';
 import { INSTITUTION_TYPES } from '@/lib/utils/constants';
 import { useDIDStore } from '@/store/did.store';
+import { useWalletStore } from '@/store/wallet.store';
+import { useBlockchain } from '@/hooks/blockchain/useBlockchain';
 
 // Form validation schema
 const institutionSchema = z.object({
@@ -60,7 +63,11 @@ export default function InstitutionRegistration({ onSuccess, onCancel }: Institu
   const [uploadedDocs, setUploadedDocs] = useState<File[]>([]);
   const [docHashes, setDocHashes] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [txStatus, setTxStatus] = useState<string>('');
+  
   const { didAddress } = useDIDStore();
+  const { account } = useWalletStore();
+  const { transactions, isReady } = useBlockchain();
 
   const { 
     register, 
@@ -138,36 +145,60 @@ export default function InstitutionRegistration({ onSuccess, onCancel }: Institu
     setStep((prev) => Math.max(prev - 1, 1) as 1 | 2 | 3 | 4);
   };
 
-  // Submit registration
+  // Submit registration - FIXED VERSION
   const onSubmit = async (data: InstitutionFormData) => {
     if (step !== 4) return;
     
+    if (!transactions || !isReady) {
+      toast.error('Blockchain connection not ready');
+      return;
+    }
+
+    if (!account) {
+      toast.error('Please connect your wallet');
+      return;
+    }
+
     setIsSubmitting(true);
     
     try {
-      // TODO: Replace with actual blockchain transaction
-      console.log('Registering institution:', {
-        ...data,
+      console.log('🏛️ Registering institution on blockchain:', {
+        name: data.name,
         did: didAddress,
-        documentHashes: docHashes,
       });
-      
-      // Simulate transaction
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      // Update DID store to mark as institution
-      useDIDStore.getState().setInstitution(data.name);
-      
-      toast.success('Institution registration submitted!', {
-        description: 'Your application is pending verification',
+
+      // Submit transaction to blockchain
+      const result = await transactions.did.registerInstitution(
+        account,
+        data.name,
+        (status) => {
+          setTxStatus(status.message);
+          console.log('Transaction status:', status);
+        }
+      );
+
+      if (result.success) {
+        console.log('✅ Institution registered successfully');
+        
+        // Update local store AFTER successful blockchain transaction
+        useDIDStore.getState().setInstitution(data.name);
+        
+        toast.success('Institution registration submitted!', {
+          description: 'Your application is pending verification',
+        });
+        
+        onSuccess?.();
+      } else {
+        throw new Error(result.error || 'Transaction failed');
+      }
+    } catch (error: any) {
+      console.error('❌ Failed to register institution:', error);
+      toast.error('Failed to register institution', {
+        description: error.message || 'Please try again',
       });
-      
-      onSuccess?.();
-    } catch (error) {
-      console.error('Failed to register institution:', error);
-      toast.error('Failed to register institution');
     } finally {
       setIsSubmitting(false);
+      setTxStatus('');
     }
   };
 
@@ -495,6 +526,23 @@ export default function InstitutionRegistration({ onSuccess, onCancel }: Institu
           <p className="text-sm text-red-600">{errors.termsAccepted.message}</p>
         )}
 
+        {/* Transaction Status */}
+        {isSubmitting && txStatus && (
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+            <div className="flex items-center space-x-3">
+              <Loader2 className="h-5 w-5 text-blue-600 animate-spin flex-shrink-0" />
+              <div className="text-sm">
+                <p className="font-semibold text-blue-800 dark:text-blue-400">
+                  {txStatus}
+                </p>
+                <p className="text-blue-700 dark:text-blue-300 mt-1">
+                  Please wait while we submit your registration to the blockchain...
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
           <div className="flex items-start space-x-3">
             <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-500 flex-shrink-0 mt-0.5" />
@@ -559,6 +607,7 @@ export default function InstitutionRegistration({ onSuccess, onCancel }: Institu
                   type="button"
                   variant="outline"
                   onClick={prevStep}
+                  disabled={isSubmitting}
                 >
                   <ArrowLeft className="h-4 w-4 mr-2" />
                   Previous
@@ -569,6 +618,7 @@ export default function InstitutionRegistration({ onSuccess, onCancel }: Institu
                   type="button"
                   variant="outline"
                   onClick={onCancel}
+                  disabled={isSubmitting}
                 >
                   Cancel
                 </Button>
@@ -580,6 +630,7 @@ export default function InstitutionRegistration({ onSuccess, onCancel }: Institu
                 <Button
                   type="button"
                   onClick={nextStep}
+                  disabled={isSubmitting}
                 >
                   Next
                   <ArrowRight className="h-4 w-4 ml-2" />
@@ -587,7 +638,7 @@ export default function InstitutionRegistration({ onSuccess, onCancel }: Institu
               ) : (
                 <Button
                   type="submit"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || !isReady}
                 >
                   {isSubmitting ? (
                     <>

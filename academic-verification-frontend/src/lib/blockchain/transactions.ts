@@ -21,121 +21,94 @@ export interface TransactionResult {
 /**
  * Submit a transaction with proper error handling and status updates
  */
-export async function submitTransaction(
-  api: ApiPromise,
-  account: InjectedAccountWithMeta | { address: string },
-  extrinsic: any,
-  onStatusUpdate?: (status: TransactionStatus) => void
-): Promise<TransactionResult> {
-  try {
-    // Get the injector for signing
-    onStatusUpdate?.({
-      status: 'signing',
-      message: 'Waiting for signature...',
-    });
-
-    const injector = await web3FromAddress(account.address);
-
-    let blockHash: string | undefined;
-    let txHash: string | undefined;
-
-    // Submit the transaction
-    onStatusUpdate?.({
-      status: 'submitting',
-      message: 'Submitting transaction...',
-    });
-
-    const unsub = await extrinsic.signAndSend(
-      account.address,
-      { signer: injector.signer },
-      ({ status, events, dispatchError }: any) => {
-        if (status.isInBlock) {
-          blockHash = status.asInBlock.toHex();
-          txHash = extrinsic.hash.toHex();
-          
-          onStatusUpdate?.({
-            status: 'inBlock',
-            message: 'Transaction included in block',
-            blockHash,
-          });
-        }
-
-        if (status.isFinalized) {
-          // Check for errors in events
-          let hasError = false;
-          let errorMessage = '';
-
-          events.forEach(({ event }: any) => {
-            if (api.events.system.ExtrinsicFailed.is(event)) {
-              hasError = true;
-              const [dispatchError] = event.data;
-              
-              if (dispatchError.isModule) {
-                const decoded = api.registry.findMetaError(dispatchError.asModule);
-                errorMessage = `${decoded.section}.${decoded.name}: ${decoded.docs.join(' ')}`;
-              } else {
-                errorMessage = dispatchError.toString();
-              }
+export function submitTransaction(
+    api: ApiPromise,
+    account: InjectedAccountWithMeta | { address: string },
+    extrinsic: any,
+    onStatusUpdate?: (status: TransactionStatus) => void
+  ): Promise<TransactionResult> {
+    return new Promise(async (resolve) => {
+      try {
+        onStatusUpdate?.({
+          status: 'signing',
+          message: 'Waiting for signature...',
+        });
+  
+        const injector = await web3FromAddress(account.address);
+  
+        let unsub: (() => void) | undefined;
+  
+        unsub = await extrinsic.signAndSend(
+          account.address,
+          { signer: injector.signer },
+          ({ status, events, dispatchError }) => {
+            if (status.isReady) {
+              onStatusUpdate?.({
+                status: 'signing',
+                message: 'Waiting for signature...',
+              });
             }
-          });
-
-          if (hasError) {
-            onStatusUpdate?.({
-              status: 'error',
-              message: 'Transaction failed',
-              error: errorMessage,
-            });
-            unsub();
-            return;
+  
+            if (status.isInBlock) {
+              onStatusUpdate?.({
+                status: 'inBlock',
+                message: 'Transaction included in block',
+                blockHash: status.asInBlock.toHex(),
+              });
+            }
+  
+            if (dispatchError) {
+              let errorMessage = dispatchError.toString();
+  
+              if (dispatchError.isModule) {
+                const decoded = api.registry.findMetaError(
+                  dispatchError.asModule
+                );
+                errorMessage = `${decoded.section}.${decoded.name}: ${decoded.docs.join(' ')}`;
+              }
+  
+              onStatusUpdate?.({
+                status: 'error',
+                message: 'Transaction failed',
+                error: errorMessage,
+              });
+  
+              unsub?.();
+              resolve({ success: false, error: errorMessage });
+              return;
+            }
+  
+            if (status.isFinalized) {
+              onStatusUpdate?.({
+                status: 'finalized',
+                message: 'Transaction finalized',
+                blockHash: status.asFinalized.toHex(),
+              });
+  
+              unsub?.();
+              resolve({
+                success: true,
+                blockHash: status.asFinalized.toHex(),
+                transactionHash: extrinsic.hash.toHex(),
+              });
+            }
           }
-
-          onStatusUpdate?.({
-            status: 'finalized',
-            message: 'Transaction finalized',
-            blockHash: status.asFinalized.toHex(),
-          });
-
-          unsub();
-        }
+        );
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Unknown error';
+  
+        onStatusUpdate?.({
+          status: 'error',
+          message: 'Transaction failed',
+          error: message,
+        });
+  
+        resolve({ success: false, error: message });
       }
-    );
-
-    // Wait for finalization
-    await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error('Transaction timeout'));
-      }, 60000); // 60 second timeout
-
-      const checkStatus = setInterval(() => {
-        if (blockHash) {
-          clearTimeout(timeout);
-          clearInterval(checkStatus);
-          resolve(true);
-        }
-      }, 100);
     });
-
-    return {
-      success: true,
-      blockHash,
-      transactionHash: txHash,
-    };
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    
-    onStatusUpdate?.({
-      status: 'error',
-      message: 'Transaction failed',
-      error: errorMessage,
-    });
-
-    return {
-      success: false,
-      error: errorMessage,
-    };
   }
-}
-
+  
 /**
  * DID Pallet Transactions
  */
@@ -187,13 +160,29 @@ export class CredentialTransactions {
     expiresAt: number | null,
     onStatusUpdate?: (status: TransactionStatus) => void
   ): Promise<TransactionResult> {
+    // Map UI credential types to blockchain enum variants
+    const typeMapping: Record<string, string> = {
+      "Bachelor's Degree": "Degree",
+      "Master's Degree": "MastersDegree",
+      "Doctorate (PhD)": "Doctorate",
+      "Certificate": "Certificate",
+      "Transcript": "Transcript",
+      "Professional Certification": "ProfessionalCertification",
+      "Other": "Other",
+    };
+  
+    const blockchainType = typeMapping[credentialType] || "Other";
+    
+    console.log('📋 Mapping credential type:', credentialType, '->', blockchainType);
+  
     const tx = this.api.tx.credential.issueCredential(
       holder,
       credentialHash,
-      credentialType,
+      blockchainType, // Use mapped type
       metadata,
       expiresAt
     );
+    
     return submitTransaction(this.api, account, tx, onStatusUpdate);
   }
 
