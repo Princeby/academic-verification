@@ -1,189 +1,135 @@
-Academic Verification System
-Decentralized academic credential verification on Polkadot
-Issue, verify, and manage academic credentials with blockchain-powered security and instant verification.
-Show Image
-Show Image
-Show Image
+# Academic Verification System
 
-What is Academic Verify?
-Academic Verify is a decentralized platform that enables:
+Decentralized academic credential verification built on Polkadot. Students, institutions, and verifiers can issue, manage, and verify credentials on-chain.
 
-Students to own and control their academic credentials
-Institutions to issue tamper-proof digital credentials
-Anyone to instantly verify credential authenticity
+---
 
-Built on Polkadot's Substrate framework, credentials are cryptographically secured and permanently stored on-chain.
+## 🌟 Features
 
-Quick Start
-Prerequisites
+**Students**
+- Self-sovereign DID management  
+- Store, share, and request credentials  
+- Generate verifiable proofs  
 
-Rust (1.70+)
-Node.js (18+)
-Polkadot.js Extension
+**Institutions**
+- Issue tamper-proof credentials  
+- Manage requests and batch operations  
+- Reputation tracking & analytics  
 
-Run the Blockchain Node
-bash# Clone the repository
-git clone https://github.com/your-username/academic-verification.git
-cd academic-verification
+**Verifiers**
+- Instant, hash-based verification  
+- QR code support, public access  
+- Blockchain-backed cryptographic proof  
 
-# Build and run local node
-cargo run --release -- --dev --tmp
-Node available at: ws://127.0.0.1:9944
-Run the Frontend
-bashcd frontend
+---
 
-# Install dependencies
+## 🏗️ Architecture
+
+**Frontend:** React, TypeScript, Vite, TailwindCSS, Zustand, React Router, TanStack Query  
+**Blockchain:** Polkadot.js API with custom pallets (`did`, `credential`, `reputation`)  
+**Key Libraries:** `@polkadot/api`, `@polkadot/extension-dapp`, `@polkadot/util-crypto`, `react-hook-form + zod`, `sonner`, `lucide-react`  
+
+---
+
+## 📋 Prerequisites
+- Node.js 18+  
+- Polkadot wallet (Polkadot.js, Talisman, SubWallet)  
+- Local node at `ws://127.0.0.1:9944`  
+
+---
+
+## 🚀 Quick Start
+```bash
+git clone https://github.com/yourusername/academic-verification.git
+cd academic-verification/frontend
 npm install
+Create .env:
 
-# Create .env file
-echo "VITE_WS_PROVIDER=ws://127.0.0.1:9944" > .env
+VITE_WS_PROVIDER=ws://127.0.0.1:9944
+VITE_CHAIN_NAME=Academic Verification Chain
+VITE_TOKEN_SYMBOL=AVC
+VITE_TOKEN_DECIMALS=12
+VITE_APP_NAME=Academic Verify
+VITE_APP_VERSION=1.0.0
 
-# Start development server
+
+Start dev server:
+
 npm run dev
-```
 
-App available at: `http://localhost:5174`
+📱 Key Features
 
----
+DID Creation
 
-## Key Features
+const { publicKey, mnemonic, address } = await generateKeys();
+await createDID(publicKey, 'Ed25519');
 
-### 🎓 For Students
-- Create self-sovereign digital identity (DID)
-- Receive verifiable credentials from institutions
-- Share credentials with one click
-- Request credentials from any institution
 
-### 🏛️ For Institutions
-- Issue tamper-proof credentials in seconds
-- Manage all issued credentials
-- Review and approve credential requests
-- Build institutional reputation on-chain
+Credential Issuance
 
-### ✅ For Verifiers
-- Instant credential verification (no account needed)
-- Cryptographic proof of authenticity
-- View issuer reputation
-- Export verification reports
+await issueCredential({ holder: studentDID, credentialHash: docHash, credentialType: "Bachelor", metadata: data });
 
----
 
-## Architecture
-```
-┌─────────────────────────────────────┐
-│         React Frontend              │
-│   (Wallet + UI + State)             │
-└──────────────┬──────────────────────┘
-               │ Polkadot.js API
-┌──────────────▼──────────────────────┐
-│      Substrate Runtime              │
-│  ┌─────┐  ┌─────────┐  ┌─────────┐ │
-│  │ DID │  │Credential│ │Reputation│ │
-│  └─────┘  └─────────┘  └─────────┘ │
-└─────────────────────────────────────┘
-```
+Credential Verification
 
-**3 Custom Pallets:**
-- **DID**: Identity management for users and institutions
-- **Credential**: Issue, revoke, and verify credentials
-- **Reputation**: Track institutional reputation and endorsements
+const result = await verifyCredential(credentialHash);
 
----
+🔐 Security
 
-## Project Structure
-```
-academic-verification/
-├── pallets/                    # Substrate pallets
-│   ├── did/                    # Identity management
-│   ├── credential/             # Credential issuance
-│   └── reputation/             # Reputation system
-├── frontend/                   # React application
-│   ├── src/
-│   │   ├── components/        # UI components
-│   │   ├── lib/blockchain/    # Blockchain integration
-│   │   ├── pages/             # Application pages
-│   │   └── store/             # State management
-│   └── package.json
-└── runtime/                   # Your runtime integration
+Self-sovereign identity
 
-Usage Examples
-Create a DID
-typescript// Connect wallet → Dashboard → Create DID
-const tx = api.tx.did.createDid(publicKey, 'Ed25519');
-await tx.signAndSend(account);
-Issue a Credential (Institution)
-typescriptconst tx = api.tx.credential.issueCredential(
-  holderDID,
-  blake2Hash(document),
-  'Degree',
-  metadata,
-  expirationDate
-);
-await tx.signAndSend(institutionAccount);
-Verify a Credential (Anyone)
-typescript// No authentication required - just paste hash
-const credential = await api.query.credential.credentialByHash(hash);
-// Returns: Valid ✅ | Revoked ⚠️ | Not Found ❌
+Blake2 hashing & on-chain storage
 
-Testing
-Backend Tests
-bash# Run all pallet tests
-cargo test
+Privacy-first, peer-to-peer verification
 
-# Test specific pallet
-cd pallets/credential
-cargo test
-Frontend Testing
-bashcd frontend
-npm run lint
-npm run type-check
+Secure key management
 
-Deployment
-Production Build
-bash# Backend
-cargo build --release
+🎨 UI/UX
 
-# Frontend
-cd frontend
+Mobile-first, dark mode support
+
+Real-time blockchain sync
+
+Loading states & toast notifications
+
+Accessible ARIA navigation
+
+🧪 Testing
+npm run test       # unit tests
+npm run test:e2e   # e2e tests
+npm run test:coverage
+
+🔨 Build & Deploy
 npm run build
-Deploy Frontend
-bash# Vercel (recommended)
-npm i -g vercel
-vercel deploy
+npm run preview
+# Deploy: Vercel/Netlify auto from GitHub
 
-# Or Netlify
-npm i -g netlify-cli
-netlify deploy --prod
+🤝 Contributing
 
-Documentation
+Fork & branch
 
-API Reference: [Link to docs]
-User Guide: [Link to guide]
-Video Tutorial: [Link to video]
+Commit & push
 
+Open PR
 
-Contributing
-We welcome contributions! See CONTRIBUTING.md for guidelines.
-bash# Fork → Clone → Create branch
-git checkout -b feature/your-feature
+Use TypeScript, ESLint, meaningful commits, add tests
 
-# Make changes → Test → Commit
-git commit -m "Add: your feature"
+🐛 Troubleshooting
 
-# Push → Open PR
-git push origin feature/your-feature
+Wallet: Install Polkadot.js extension
 
-Support
+Node timeout: Ensure ws://127.0.0.1:9944 is running
 
-Issues: GitHub Issues
-Discussions: GitHub Discussions
-Email: support@academicverify.com
+Build errors: rm -rf node_modules package-lock.json && npm install
 
+📝 License
 
-License
-MIT License - see LICENSE for details
+MIT License
 
-Built With
-Substrate • Polkadot • React • TypeScript
+👥 Team
 
-<sub>Made with ❤️ by the Academic Verify Team</sub>
+Your Name - Project Lead - @your
+
+🙏 Acknowledgments
+
+Polkadot ecosystem, Substrate pallets, open source libraries
