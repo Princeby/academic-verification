@@ -1,5 +1,6 @@
 <artifact identifier="dev-setup-guide" type="text/markdown" title="Academic Verification System - Developer Setup Guide">
-## Academic Verification System - Developer Setup Guide
+
+  # Academic Verification System - Developer Setup Guide
 
 A fully decentralized academic credential verification platform built on Polkadot. Students, institutions, and verifiers can issue, manage, and verify academic credentials on the blockchain.
 
