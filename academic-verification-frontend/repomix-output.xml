@@ -101,6 +101,7 @@ src/
       constants.ts
       env.ts
   pages/
+    AdminVerification.tsx
     CreateDIDPage.tsx
     Credentials.tsx
     Dashboard.tsx
@@ -1272,6 +1273,7 @@ import { Badge } from '../ui/Badge';
 import { toast } from 'sonner';
 import { CREDENTIAL_TYPES } from '@/lib/utils/constants';
 import { useDIDStore } from '@/store/did.store';
+import { useBlockchain } from '@/hooks/blockchain/useBlockchain';
 
 // Form validation schema
 const issueCredentialSchema = z.object({
@@ -1330,6 +1332,7 @@ export default function IssueCredentialForm({ onSuccess, onCancel }: IssueCreden
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   const { institutionName, didAddress } = useDIDStore();
+  const { queries, transactions, account, api, isReady } = useBlockchain();
 
   const { 
     register, 
@@ -1349,30 +1352,55 @@ export default function IssueCredentialForm({ onSuccess, onCancel }: IssueCreden
   const selectedCredentialType = watch('credentialType');
   const recipientDID = watch('recipientDID');
 
-  // Search for recipient DID
+  // Search for recipient DID on blockchain
   const searchRecipient = async () => {
     if (!recipientDID || recipientDID.length < 10) {
       toast.error('Please enter a valid DID address');
       return;
     }
 
+    if (!queries || !isReady) {
+      toast.error('Blockchain not connected');
+      return;
+    }
+
     setIsSearching(true);
     
     try {
-      // TODO: Replace with actual blockchain query
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      console.log('🔍 Searching for DID:', recipientDID);
+
+      // Query blockchain for DID
+      const didDoc = await queries.did.getDID(recipientDID);
       
-      // Mock recipient data
-      const mockRecipient = {
-        name: 'John Doe',
-        status: 'active' as const,
-      };
+      if (!didDoc) {
+        setRecipientInfo({ status: 'not_found' });
+        toast.error('DID not found on blockchain');
+        return;
+      }
+
+      // Check if DID is active
+      if (!didDoc.active) {
+        setRecipientInfo({ status: 'inactive' });
+        toast.warning('This DID is inactive');
+        return;
+      }
+
+      console.log('✅ Found active DID:', didDoc);
       
-      setRecipientInfo(mockRecipient);
-      toast.success('Recipient found!');
-    } catch (error) {
+      setRecipientInfo({
+        name: recipientDID.slice(0, 8) + '...' + recipientDID.slice(-6), // Use truncated address as name
+        status: 'active',
+      });
+      
+      toast.success('Recipient found!', {
+        description: 'DID is active and can receive credentials',
+      });
+    } catch (error: any) {
+      console.error('❌ Failed to search DID:', error);
       setRecipientInfo({ status: 'not_found' });
-      toast.error('Recipient not found');
+      toast.error('Failed to verify DID', {
+        description: error.message || 'Please check the address',
+      });
     } finally {
       setIsSearching(false);
     }
@@ -1399,17 +1427,36 @@ export default function IssueCredentialForm({ onSuccess, onCancel }: IssueCreden
     setUploadedDocument(file);
     
     // Generate hash
-    const hash = await generateFileHash(file);
-    setDocumentHash(hash);
-    
-    toast.success('Document uploaded successfully');
+    try {
+      const hash = await generateFileHash(file);
+      setDocumentHash(hash);
+      toast.success('Document uploaded successfully');
+    } catch (error) {
+      toast.error('Failed to generate document hash');
+      setUploadedDocument(null);
+    }
   };
 
-  // Generate file hash (mock - replace with actual Blake2)
+  // Generate file hash using Blake2
   const generateFileHash = async (file: File): Promise<string> => {
-    return '0x' + Array(64).fill(0).map(() => 
-      Math.floor(Math.random() * 16).toString(16)
-    ).join('');
+    try {
+      // Import Blake2 from Polkadot util-crypto
+      const { blake2AsHex } = await import('@polkadot/util-crypto');
+      
+      // Read file as ArrayBuffer
+      const arrayBuffer = await file.arrayBuffer();
+      const uint8Array = new Uint8Array(arrayBuffer);
+      
+      // Generate Blake2-256 hash
+      const hash = blake2AsHex(uint8Array, 256);
+      
+      console.log('🔐 Generated Blake2 hash:', hash);
+      
+      return hash;
+    } catch (error) {
+      console.error('Failed to generate hash:', error);
+      throw error;
+    }
   };
 
   // Navigate steps
@@ -1447,34 +1494,95 @@ export default function IssueCredentialForm({ onSuccess, onCancel }: IssueCreden
     setStep((prev) => Math.max(prev - 1, 1) as 1 | 2 | 3 | 4 | 5);
   };
 
-  // Submit credential
+  // Submit credential to blockchain
   const onSubmit = async (data: IssueCredentialFormData) => {
     if (step !== 5) return;
     
     setIsSubmitting(true);
     
     try {
-      // TODO: Replace with actual blockchain transaction
-      console.log('Issuing credential:', {
-        ...data,
-        issuer: didAddress,
+      if (!transactions || !account || !api) {
+        throw new Error('Blockchain not connected');
+      }
+
+      console.log('🚀 Issuing credential on blockchain...');
+
+      // Prepare metadata as JSON
+      const metadata = JSON.stringify({
+        degreeName: data.degreeName,
+        fieldOfStudy: data.fieldOfStudy,
+        major: data.major,
+        minor: data.minor,
+        graduationDate: data.graduationDate,
+        gpa: data.gpa,
+        honors: data.honors,
+        referenceNumber: data.referenceNumber,
+        notes: data.notes,
+      });
+
+      // Convert expiration date to block number (if provided)
+      let expiresAtBlock: number | null = null;
+      if (data.expirationDate) {
+        const currentBlock = await api.query.system.number();
+        const expirationDate = new Date(data.expirationDate);
+        const currentDate = new Date();
+        const daysDiff = Math.ceil((expirationDate.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24));
+        // Assuming ~6 second blocks, roughly 14,400 blocks per day
+        const blocksToAdd = daysDiff * 14400;
+        expiresAtBlock = currentBlock.toNumber() + blocksToAdd;
+      }
+
+      // Show transaction progress
+      const statusToast = toast.loading('Preparing transaction...');
+
+      // Issue credential transaction
+      const result = await transactions.credential.issueCredential(
+        account,
+        data.recipientDID,
         documentHash,
-        recipientDID: data.recipientDID,
+        data.credentialType,
+        metadata,
+        expiresAtBlock,
+        (status) => {
+          if (status.status === 'signing') {
+            toast.loading('Waiting for signature...', { id: statusToast });
+          } else if (status.status === 'submitting') {
+            toast.loading('Submitting to blockchain...', { id: statusToast });
+          } else if (status.status === 'inBlock') {
+            toast.loading('Transaction in block...', { id: statusToast });
+          } else if (status.status === 'finalized') {
+            toast.dismiss(statusToast);
+          } else if (status.status === 'error') {
+            toast.error(status.message, { id: statusToast });
+          }
+        }
+      );
+
+      if (result.success) {
+        console.log('✅ Credential issued successfully!');
+        console.log('Block hash:', result.blockHash);
+        console.log('Transaction hash:', result.transactionHash);
+
+        toast.success('Credential issued successfully!', {
+          description: `Transaction: ${result.transactionHash?.slice(0, 10)}...`,
+          duration: 5000,
+        });
+        
+        onSuccess?.(result.transactionHash || 'unknown');
+      } else {
+        throw new Error(result.error || 'Transaction failed');
+      }
+    } catch (error: any) {
+      console.error('❌ Failed to issue credential:', error);
+      
+      let errorMessage = 'Failed to issue credential';
+      if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      toast.error(errorMessage, {
+        description: 'Please check the console for details',
       });
-      
-      // Simulate transaction
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      const credentialId = 'cred_' + Date.now();
-      
-      toast.success('Credential issued successfully!', {
-        description: `Credential ID: ${credentialId}`,
-      });
-      
-      onSuccess?.(credentialId);
-    } catch (error) {
-      console.error('Failed to issue credential:', error);
-      toast.error('Failed to issue credential');
     } finally {
       setIsSubmitting(false);
     }
@@ -1508,7 +1616,7 @@ export default function IssueCredentialForm({ onSuccess, onCancel }: IssueCreden
           <Button
             type="button"
             onClick={searchRecipient}
-            disabled={isSearching}
+            disabled={isSearching || !isReady}
           >
             {isSearching ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -2016,6 +2124,7 @@ export default function IssueCredentialForm({ onSuccess, onCancel }: IssueCreden
                   type="button"
                   variant="outline"
                   onClick={prevStep}
+                  disabled={isSubmitting}
                 >
                   <ArrowLeft className="h-4 w-4 mr-2" />
                   Previous
@@ -2026,6 +2135,7 @@ export default function IssueCredentialForm({ onSuccess, onCancel }: IssueCreden
                   type="button"
                   variant="outline"
                   onClick={onCancel}
+                  disabled={isSubmitting}
                 >
                   Cancel
                 </Button>
@@ -2037,6 +2147,7 @@ export default function IssueCredentialForm({ onSuccess, onCancel }: IssueCreden
                 <Button
                   type="button"
                   onClick={nextStep}
+                  disabled={isSearching || !isReady}
                 >
                   Next
                   <ArrowRight className="h-4 w-4 ml-2" />
@@ -2044,7 +2155,7 @@ export default function IssueCredentialForm({ onSuccess, onCancel }: IssueCreden
               ) : (
                 <Button
                   type="submit"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || !isReady}
                 >
                   {isSubmitting ? (
                     <>
@@ -2683,7 +2794,12 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../ui
 import { Input } from '../ui/Input';
 import { Badge } from '../ui/Badge';
 import { toast } from 'sonner';
-import { mnemonicGenerate } from '@polkadot/util-crypto';
+import { mnemonicGenerate, mnemonicToMiniSecret, naclKeypairFromSeed } from '@polkadot/util-crypto';
+import { u8aToHex } from '@polkadot/util';
+import { Keyring } from '@polkadot/keyring';
+import { useBlockchain } from '@/hooks/blockchain/useBlockchain';
+import { useWalletStore } from '@/store/wallet.store';
+import { useDIDStore } from '@/store/did.store';
 
 // Form validation schema
 const createDIDSchema = z.object({
@@ -2731,6 +2847,11 @@ export default function CreateDIDForm({ onSuccess, onCancel }: CreateDIDFormProp
   } | null>(null);
   const [showMnemonic, setShowMnemonic] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [transactionStatus, setTransactionStatus] = useState('');
+
+  const { account } = useWalletStore();
+  const { transactions, isReady } = useBlockchain();
+  const { setDID } = useDIDStore();
 
   const { register, handleSubmit, watch, formState: { errors } } = useForm<CreateDIDFormData>({
     resolver: zodResolver(createDIDSchema),
@@ -2742,25 +2863,37 @@ export default function CreateDIDForm({ onSuccess, onCancel }: CreateDIDFormProp
 
   const selectedKeyType = watch('keyType');
 
-  // Generate keys with randomized mnemonic
+  // Generate keys with real Polkadot keypair
   const generateKeys = async () => {
     try {
       setStep('generate');
       
-      // Generate a random 12-word mnemonic using Polkadot's crypto utilities
+      // Generate a random 12-word mnemonic
       const mnemonic = mnemonicGenerate(12);
       
-      // Simulate key generation (replace with actual Polkadot key generation)
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise(resolve => setTimeout(resolve, 500));
       
-      // Mock generated keys (in production, derive these from the mnemonic)
-      const mockKeys = {
-        publicKey: '0x' + Array(64).fill(0).map(() => Math.floor(Math.random() * 16).toString(16)).join(''),
+      // Create keyring with the selected key type
+      const keyring = new Keyring({ 
+        type: selectedKeyType.toLowerCase() as 'ed25519' | 'sr25519' | 'ecdsa' 
+      });
+      
+      // Create keypair from mnemonic
+      const pair = keyring.addFromMnemonic(mnemonic);
+      
+      const keys = {
+        publicKey: u8aToHex(pair.publicKey),
         mnemonic: mnemonic,
-        address: '5' + Array(47).fill(0).map(() => 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'[Math.floor(Math.random() * 62)]).join(''),
+        address: pair.address,
       };
       
-      setGeneratedKeys(mockKeys);
+      console.log('Generated keys:', {
+        address: keys.address,
+        publicKey: keys.publicKey,
+        keyType: selectedKeyType,
+      });
+      
+      setGeneratedKeys(keys);
       setStep('backup');
       toast.success('Keys generated successfully');
     } catch (error) {
@@ -2770,7 +2903,7 @@ export default function CreateDIDForm({ onSuccess, onCancel }: CreateDIDFormProp
     }
   };
 
-  // Regenerate keys (create new random mnemonic)
+  // Regenerate keys
   const regenerateKeys = async () => {
     toast.info('Generating new keys...');
     await generateKeys();
@@ -2810,28 +2943,88 @@ export default function CreateDIDForm({ onSuccess, onCancel }: CreateDIDFormProp
 
   // Submit DID creation to blockchain
   const onSubmit = async (data: CreateDIDFormData) => {
-    if (!generatedKeys) return;
+    if (!generatedKeys || !account || !transactions || !isReady) {
+      toast.error('Wallet not connected or blockchain not ready');
+      return;
+    }
     
     setIsSubmitting(true);
     
     try {
-      // TODO: Replace with actual blockchain transaction
-      console.log('Creating DID with:', {
-        keyType: data.keyType,
+      console.log('🚀 Submitting DID creation to blockchain...');
+      
+      // Convert hex public key to Uint8Array
+      const publicKeyHex = generatedKeys.publicKey.startsWith('0x') 
+        ? generatedKeys.publicKey.slice(2) 
+        : generatedKeys.publicKey;
+      
+      const publicKeyBytes = new Uint8Array(
+        publicKeyHex.match(/.{1,2}/g)!.map(byte => parseInt(byte, 16))
+      );
+
+      console.log('📝 Transaction details:', {
+        from: account.address,
         publicKey: generatedKeys.publicKey,
-        address: generatedKeys.address,
+        keyType: data.keyType,
       });
+
+      // Call the blockchain transaction with status updates
+      const result = await transactions.did.createDID(
+        account,
+        publicKeyBytes,
+        data.keyType,
+        (status) => {
+          console.log('Transaction status:', status);
+          setTransactionStatus(status.message);
+          
+          if (status.status === 'signing') {
+            toast.info('Please sign the transaction in your wallet');
+          } else if (status.status === 'inBlock') {
+            toast.info('Transaction included in block');
+          }
+        }
+      );
+
+      if (result.success) {
+        console.log('✅ DID created successfully!', result);
+        
+        // Update DID store
+        setDID(generatedKeys.address, [{
+          id: 'primary_key',
+          keyType: data.keyType,
+          publicKey: generatedKeys.publicKey,
+          addedAt: Date.now(),
+        }]);
+        
+        toast.success('DID created successfully!', {
+          description: `Block: ${result.blockHash?.slice(0, 10)}...`,
+        });
+        
+        onSuccess?.(generatedKeys.address);
+      } else {
+        throw new Error(result.error || 'Transaction failed');
+      }
+    } catch (error: any) {
+      console.error('❌ Failed to create DID:', error);
       
-      // Simulate transaction
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      let errorMessage = 'Failed to create DID';
       
-      toast.success('DID created successfully!');
-      onSuccess?.(generatedKeys.address);
-    } catch (error) {
-      console.error('Failed to create DID:', error);
-      toast.error('Failed to create DID. Please try again.');
+      if (error.message?.includes('1010')) {
+        errorMessage = 'Insufficient balance for transaction fee';
+      } else if (error.message?.includes('rejected')) {
+        errorMessage = 'Transaction was rejected';
+      } else if (error.message?.includes('DidAlreadyExists')) {
+        errorMessage = 'DID already exists for this account';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      toast.error(errorMessage, {
+        description: 'Please check your balance and try again',
+      });
     } finally {
       setIsSubmitting(false);
+      setTransactionStatus('');
     }
   };
 
@@ -2849,6 +3042,35 @@ export default function CreateDIDForm({ onSuccess, onCancel }: CreateDIDFormProp
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
+          {/* Connection Check */}
+          {!account && (
+            <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
+              <div className="flex items-start space-x-3">
+                <AlertTriangle className="h-5 w-5 text-yellow-600 dark:text-yellow-500 flex-shrink-0 mt-0.5" />
+                <div className="text-sm">
+                  <p className="font-semibold text-yellow-800 dark:text-yellow-400">Wallet Not Connected</p>
+                  <p className="text-yellow-700 dark:text-yellow-300 mt-1">
+                    Please connect your wallet first to create a DID.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {!isReady && (
+            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+              <div className="flex items-start space-x-3">
+                <Loader2 className="h-5 w-5 animate-spin text-blue-600 dark:text-blue-500 flex-shrink-0 mt-0.5" />
+                <div className="text-sm">
+                  <p className="font-semibold text-blue-800 dark:text-blue-400">Connecting to Blockchain</p>
+                  <p className="text-blue-700 dark:text-blue-300 mt-1">
+                    Please wait while we connect to the blockchain...
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="space-y-3">
             {KEY_TYPES.map((type) => (
               <label
@@ -2899,7 +3121,11 @@ export default function CreateDIDForm({ onSuccess, onCancel }: CreateDIDFormProp
                 Cancel
               </Button>
             )}
-            <Button onClick={generateKeys} className="ml-auto">
+            <Button 
+              onClick={generateKeys} 
+              className="ml-auto"
+              disabled={!account || !isReady}
+            >
               Continue
             </Button>
           </div>
@@ -3067,6 +3293,18 @@ export default function CreateDIDForm({ onSuccess, onCancel }: CreateDIDFormProp
             <p className="text-sm text-red-600">{errors.backupConfirmed.message}</p>
           )}
 
+          {/* Transaction Status */}
+          {transactionStatus && (
+            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+              <div className="flex items-center space-x-3">
+                <Loader2 className="h-5 w-5 animate-spin text-blue-600 dark:text-blue-500" />
+                <p className="text-sm font-medium text-blue-800 dark:text-blue-400">
+                  {transactionStatus}
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Actions */}
           <div className="flex justify-between pt-4">
             <Button 
@@ -3075,12 +3313,13 @@ export default function CreateDIDForm({ onSuccess, onCancel }: CreateDIDFormProp
                 setStep('select');
                 setGeneratedKeys(null);
               }}
+              disabled={isSubmitting}
             >
               Start Over
             </Button>
             <Button
               onClick={handleSubmit(onSubmit)}
-              disabled={isSubmitting}
+              disabled={isSubmitting || !isReady}
             >
               {isSubmitting ? (
                 <>
@@ -3226,6 +3465,7 @@ export { default as InstitutionRegistration } from './InstitutionRegistration';
 </file>
 
 <file path="src/components/did/InstitutionRegistration.tsx">
+// src/components/did/InstitutionRegistration.tsx - FIXED VERSION
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -3251,6 +3491,8 @@ import { Badge } from '../ui/Badge';
 import { toast } from 'sonner';
 import { INSTITUTION_TYPES } from '@/lib/utils/constants';
 import { useDIDStore } from '@/store/did.store';
+import { useWalletStore } from '@/store/wallet.store';
+import { useBlockchain } from '@/hooks/blockchain/useBlockchain';
 
 // Form validation schema
 const institutionSchema = z.object({
@@ -3288,7 +3530,11 @@ export default function InstitutionRegistration({ onSuccess, onCancel }: Institu
   const [uploadedDocs, setUploadedDocs] = useState<File[]>([]);
   const [docHashes, setDocHashes] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [txStatus, setTxStatus] = useState<string>('');
+  
   const { didAddress } = useDIDStore();
+  const { account } = useWalletStore();
+  const { transactions, isReady } = useBlockchain();
 
   const { 
     register, 
@@ -3366,36 +3612,60 @@ export default function InstitutionRegistration({ onSuccess, onCancel }: Institu
     setStep((prev) => Math.max(prev - 1, 1) as 1 | 2 | 3 | 4);
   };
 
-  // Submit registration
+  // Submit registration - FIXED VERSION
   const onSubmit = async (data: InstitutionFormData) => {
     if (step !== 4) return;
     
+    if (!transactions || !isReady) {
+      toast.error('Blockchain connection not ready');
+      return;
+    }
+
+    if (!account) {
+      toast.error('Please connect your wallet');
+      return;
+    }
+
     setIsSubmitting(true);
     
     try {
-      // TODO: Replace with actual blockchain transaction
-      console.log('Registering institution:', {
-        ...data,
+      console.log('🏛️ Registering institution on blockchain:', {
+        name: data.name,
         did: didAddress,
-        documentHashes: docHashes,
       });
-      
-      // Simulate transaction
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      // Update DID store to mark as institution
-      useDIDStore.getState().setInstitution(data.name);
-      
-      toast.success('Institution registration submitted!', {
-        description: 'Your application is pending verification',
+
+      // Submit transaction to blockchain
+      const result = await transactions.did.registerInstitution(
+        account,
+        data.name,
+        (status) => {
+          setTxStatus(status.message);
+          console.log('Transaction status:', status);
+        }
+      );
+
+      if (result.success) {
+        console.log('✅ Institution registered successfully');
+        
+        // Update local store AFTER successful blockchain transaction
+        useDIDStore.getState().setInstitution(data.name);
+        
+        toast.success('Institution registration submitted!', {
+          description: 'Your application is pending verification',
+        });
+        
+        onSuccess?.();
+      } else {
+        throw new Error(result.error || 'Transaction failed');
+      }
+    } catch (error: any) {
+      console.error('❌ Failed to register institution:', error);
+      toast.error('Failed to register institution', {
+        description: error.message || 'Please try again',
       });
-      
-      onSuccess?.();
-    } catch (error) {
-      console.error('Failed to register institution:', error);
-      toast.error('Failed to register institution');
     } finally {
       setIsSubmitting(false);
+      setTxStatus('');
     }
   };
 
@@ -3723,6 +3993,23 @@ export default function InstitutionRegistration({ onSuccess, onCancel }: Institu
           <p className="text-sm text-red-600">{errors.termsAccepted.message}</p>
         )}
 
+        {/* Transaction Status */}
+        {isSubmitting && txStatus && (
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+            <div className="flex items-center space-x-3">
+              <Loader2 className="h-5 w-5 text-blue-600 animate-spin flex-shrink-0" />
+              <div className="text-sm">
+                <p className="font-semibold text-blue-800 dark:text-blue-400">
+                  {txStatus}
+                </p>
+                <p className="text-blue-700 dark:text-blue-300 mt-1">
+                  Please wait while we submit your registration to the blockchain...
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
           <div className="flex items-start space-x-3">
             <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-500 flex-shrink-0 mt-0.5" />
@@ -3787,6 +4074,7 @@ export default function InstitutionRegistration({ onSuccess, onCancel }: Institu
                   type="button"
                   variant="outline"
                   onClick={prevStep}
+                  disabled={isSubmitting}
                 >
                   <ArrowLeft className="h-4 w-4 mr-2" />
                   Previous
@@ -3797,6 +4085,7 @@ export default function InstitutionRegistration({ onSuccess, onCancel }: Institu
                   type="button"
                   variant="outline"
                   onClick={onCancel}
+                  disabled={isSubmitting}
                 >
                   Cancel
                 </Button>
@@ -3808,6 +4097,7 @@ export default function InstitutionRegistration({ onSuccess, onCancel }: Institu
                 <Button
                   type="button"
                   onClick={nextStep}
+                  disabled={isSubmitting}
                 >
                   Next
                   <ArrowRight className="h-4 w-4 ml-2" />
@@ -3815,7 +4105,7 @@ export default function InstitutionRegistration({ onSuccess, onCancel }: Institu
               ) : (
                 <Button
                   type="submit"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || !isReady}
                 >
                   {isSubmitting ? (
                     <>
@@ -4422,6 +4712,168 @@ export default function NotificationBell() {
 </file>
 
 <file path="src/components/layout/Sidebar.tsx">
+// import { useState } from 'react';
+// import { Link, useLocation } from 'react-router-dom';
+// import { 
+//   LayoutDashboard, 
+//   Award, 
+//   Building2, 
+//   CheckCircle, 
+//   Users,
+//   FileText,
+//   Settings,
+//   Plus
+// } from 'lucide-react';
+// import { cn } from '@/lib/utils/cn';
+// import { Button } from '../ui/Button';
+// import DIDStatus from '../did/DIDStatus';
+// import CreateDIDModal from '../did/CreateDIDModal';
+// import { useDIDStore } from '@/store/did.store';
+
+// const navigationItems = [
+//   {
+//     title: 'Dashboard',
+//     href: '/dashboard',
+//     icon: LayoutDashboard,
+//   },
+//   {
+//     title: 'My Credentials',
+//     href: '/credentials',
+//     icon: Award,
+//   },
+//   {
+//     title: 'Institutions',
+//     href: '/institutions',
+//     icon: Building2,
+//   },
+//   {
+//     title: 'Verify',
+//     href: '/verify',
+//     icon: CheckCircle,
+//   },
+// ];
+
+// const institutionItems = [
+//   {
+//     title: 'Institution Profile',
+//     href: '/institution',
+//     icon: Building2,
+//   },
+//   {
+//     title: 'Issued Credentials',
+//     href: '/institution/issued',
+//     icon: FileText,
+//   },
+//   {
+//     title: 'Endorsements',
+//     href: '/institution/endorsements',
+//     icon: Users,
+//   },
+// ];
+
+// export default function Sidebar() {
+//   const location = useLocation();
+//   const [showCreateDIDModal, setShowCreateDIDModal] = useState(false);
+//   const { hasDID, isInstitution } = useDIDStore();
+
+//   return (
+//     <>
+//       <div className="flex flex-col h-full py-6 px-3">
+//         {/* User Profile Section */}
+//         <div className="mb-6 px-3">
+//           <DIDStatus />
+//         </div>
+
+//         {/* Quick Actions */}
+//         {!hasDID && (
+//           <div className="mb-6 px-3 space-y-2">
+//             <Button 
+//               className="w-full justify-start" 
+//               size="sm"
+//               onClick={() => setShowCreateDIDModal(true)}
+//             >
+//               <Plus className="h-4 w-4 mr-2" />
+//               Create DID
+//             </Button>
+//           </div>
+//         )}
+
+//         {/* Main Navigation */}
+//         <nav className="flex-1 space-y-1">
+//           <div className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+//             Main Menu
+//           </div>
+//           {navigationItems.map((item) => {
+//             const Icon = item.icon;
+//             const isActive = location.pathname === item.href;
+            
+//             return (
+//               <Link
+//                 key={item.href}
+//                 to={item.href}
+//                 className={cn(
+//                   "flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-colors",
+//                   isActive
+//                     ? "bg-primary text-primary-foreground"
+//                     : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+//                 )}
+//               >
+//                 <Icon className="h-5 w-5 mr-3" />
+//                 {item.title}
+//               </Link>
+//             );
+//           })}
+
+//           {/* Institution Section (conditional) */}
+//           {isInstitution && (
+//             <>
+//               <div className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider mt-6 mb-2">
+//                 Institution
+//               </div>
+//               {institutionItems.map((item) => {
+//                 const Icon = item.icon;
+//                 const isActive = location.pathname === item.href;
+                
+//                 return (
+//                   <Link
+//                     key={item.href}
+//                     to={item.href}
+//                     className={cn(
+//                       "flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-colors",
+//                       isActive
+//                         ? "bg-primary text-primary-foreground"
+//                         : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+//                     )}
+//                   >
+//                     <Icon className="h-5 w-5 mr-3" />
+//                     {item.title}
+//                   </Link>
+//                 );
+//               })}
+//             </>
+//           )}
+//         </nav>
+
+//         {/* Settings */}
+//         <div className="mt-auto pt-4 border-t border-border">
+//           <Link
+//             to="/settings"
+//             className="flex items-center px-3 py-2 text-sm font-medium rounded-lg text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+//           >
+//             <Settings className="h-5 w-5 mr-3" />
+//             Settings
+//           </Link>
+//         </div>
+//       </div>
+
+//       {/* Create DID Modal */}
+//       <CreateDIDModal 
+//         isOpen={showCreateDIDModal}
+//         onClose={() => setShowCreateDIDModal(false)}
+//       />
+//     </>
+//   );
+// }
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { 
@@ -4432,7 +4884,8 @@ import {
   Users,
   FileText,
   Settings,
-  Plus
+  Plus,
+  Shield
 } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { Button } from '../ui/Button';
@@ -4450,6 +4903,11 @@ const navigationItems = [
     title: 'My Credentials',
     href: '/credentials',
     icon: Award,
+  },
+  {
+    title: 'My Requests',
+    href: '/my-requests',
+    icon: FileText,
   },
   {
     title: 'Institutions',
@@ -4470,14 +4928,27 @@ const institutionItems = [
     icon: Building2,
   },
   {
+    title: 'Issue Credential',
+    href: '/institution/issue',
+    icon: Plus,
+  },
+  {
     title: 'Issued Credentials',
     href: '/institution/issued',
     icon: FileText,
   },
   {
-    title: 'Endorsements',
-    href: '/institution/endorsements',
+    title: 'Requests',
+    href: '/institution/requests',
     icon: Users,
+  },
+];
+
+const adminItems = [
+  {
+    title: 'Verify Institutions',
+    href: '/admin/verify-institutions',
+    icon: Shield,
   },
 ];
 
@@ -4485,6 +4956,11 @@ export default function Sidebar() {
   const location = useLocation();
   const [showCreateDIDModal, setShowCreateDIDModal] = useState(false);
   const { hasDID, isInstitution } = useDIDStore();
+
+  // Check if user should see admin section
+  // For now, show admin to all verified institutions
+  // You can add more specific logic here (e.g., check for admin role)
+  const showAdminSection = isInstitution;
 
   return (
     <>
@@ -4541,6 +5017,36 @@ export default function Sidebar() {
                 Institution
               </div>
               {institutionItems.map((item) => {
+                const Icon = item.icon;
+                const isActive = location.pathname === item.href;
+                
+                return (
+                  <Link
+                    key={item.href}
+                    to={item.href}
+                    className={cn(
+                      "flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-colors",
+                      isActive
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                    )}
+                  >
+                    <Icon className="h-5 w-5 mr-3" />
+                    {item.title}
+                  </Link>
+                );
+              })}
+            </>
+          )}
+
+          {/* Admin Section (conditional) */}
+          {showAdminSection && (
+            <>
+              <div className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider mt-6 mb-2">
+                <Shield className="inline h-3 w-3 mr-1" />
+                Admin
+              </div>
+              {adminItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = location.pathname === item.href;
                 
@@ -6170,6 +6676,7 @@ export function usePolkadotApi() {
 import type { ApiPromise } from '@polkadot/api';
 import { hexToU8a, u8aToHex } from '@polkadot/util';
 import { blake2AsHex } from '@polkadot/util-crypto';
+import { CREDENTIAL_TYPE_DISPLAY_MAP } from '../utils/constants';
 
 /**
  * Generate Blake2 hash from file
@@ -6211,42 +6718,34 @@ export async function verifyFileHash(file: File, expectedHash: string): Promise<
  * Format blockchain data for UI
  */
 export function formatCredentialData(rawCredential: any) {
-  return {
-    id: rawCredential.credentialId,
-    holder: rawCredential.holder,
-    issuer: rawCredential.issuer,
-    credentialHash: rawCredential.credentialHash,
-    credentialType: formatCredentialType(rawCredential.credentialType),
-    metadata: rawCredential.metadata ? Buffer.from(rawCredential.metadata).toString('utf-8') : undefined,
-    issuedAt: rawCredential.issuedAt,
-    expiresAt: rawCredential.expiresAt || undefined,
-    revoked: rawCredential.status === 'Revoked',
-  };
-}
+    return {
+      id: rawCredential.credentialId,
+      holder: rawCredential.holder,
+      issuer: rawCredential.issuer,
+      credentialHash: rawCredential.credentialHash,
+      credentialType: formatCredentialType(rawCredential.credentialType), // Use helper
+      metadata: rawCredential.metadata ? Buffer.from(rawCredential.metadata).toString('utf-8') : undefined,
+      issuedAt: rawCredential.issuedAt,
+      expiresAt: rawCredential.expiresAt || undefined,
+      revoked: rawCredential.status === 'Revoked',
+    };
+  }
 
 /**
  * Format credential type enum
  */
-function formatCredentialType(type: any): string {
-  if (typeof type === 'string') return type;
-  
-  const typeMap: Record<string, string> = {
-    'Degree': "Bachelor's Degree",
-    'MastersDegree': "Master's Degree",
-    'Doctorate': 'Doctorate (PhD)',
-    'Certificate': 'Certificate',
-    'Transcript': 'Transcript',
-    'ProfessionalCertification': 'Professional Certification',
-    'Other': 'Other',
-  };
-  
-  if (typeof type === 'object') {
-    const key = Object.keys(type)[0];
-    return typeMap[key] || 'Unknown';
+export function formatCredentialType(type: any): string {
+    if (typeof type === 'string') {
+      return CREDENTIAL_TYPE_DISPLAY_MAP[type] || type;
+    }
+    
+    if (typeof type === 'object') {
+      const key = Object.keys(type)[0];
+      return CREDENTIAL_TYPE_DISPLAY_MAP[key] || key;
+    }
+    
+    return 'Unknown';
   }
-  
-  return typeMap[type] || type;
-}
 
 /**
  * Parse metadata string to object
@@ -7057,121 +7556,94 @@ export interface TransactionResult {
 /**
  * Submit a transaction with proper error handling and status updates
  */
-export async function submitTransaction(
-  api: ApiPromise,
-  account: InjectedAccountWithMeta | { address: string },
-  extrinsic: any,
-  onStatusUpdate?: (status: TransactionStatus) => void
-): Promise<TransactionResult> {
-  try {
-    // Get the injector for signing
-    onStatusUpdate?.({
-      status: 'signing',
-      message: 'Waiting for signature...',
-    });
-
-    const injector = await web3FromAddress(account.address);
-
-    let blockHash: string | undefined;
-    let txHash: string | undefined;
-
-    // Submit the transaction
-    onStatusUpdate?.({
-      status: 'submitting',
-      message: 'Submitting transaction...',
-    });
-
-    const unsub = await extrinsic.signAndSend(
-      account.address,
-      { signer: injector.signer },
-      ({ status, events, dispatchError }: any) => {
-        if (status.isInBlock) {
-          blockHash = status.asInBlock.toHex();
-          txHash = extrinsic.hash.toHex();
-          
-          onStatusUpdate?.({
-            status: 'inBlock',
-            message: 'Transaction included in block',
-            blockHash,
-          });
-        }
-
-        if (status.isFinalized) {
-          // Check for errors in events
-          let hasError = false;
-          let errorMessage = '';
-
-          events.forEach(({ event }: any) => {
-            if (api.events.system.ExtrinsicFailed.is(event)) {
-              hasError = true;
-              const [dispatchError] = event.data;
-              
-              if (dispatchError.isModule) {
-                const decoded = api.registry.findMetaError(dispatchError.asModule);
-                errorMessage = `${decoded.section}.${decoded.name}: ${decoded.docs.join(' ')}`;
-              } else {
-                errorMessage = dispatchError.toString();
-              }
+export function submitTransaction(
+    api: ApiPromise,
+    account: InjectedAccountWithMeta | { address: string },
+    extrinsic: any,
+    onStatusUpdate?: (status: TransactionStatus) => void
+  ): Promise<TransactionResult> {
+    return new Promise(async (resolve) => {
+      try {
+        onStatusUpdate?.({
+          status: 'signing',
+          message: 'Waiting for signature...',
+        });
+  
+        const injector = await web3FromAddress(account.address);
+  
+        let unsub: (() => void) | undefined;
+  
+        unsub = await extrinsic.signAndSend(
+          account.address,
+          { signer: injector.signer },
+          ({ status, events, dispatchError }) => {
+            if (status.isReady) {
+              onStatusUpdate?.({
+                status: 'signing',
+                message: 'Waiting for signature...',
+              });
             }
-          });
-
-          if (hasError) {
-            onStatusUpdate?.({
-              status: 'error',
-              message: 'Transaction failed',
-              error: errorMessage,
-            });
-            unsub();
-            return;
+  
+            if (status.isInBlock) {
+              onStatusUpdate?.({
+                status: 'inBlock',
+                message: 'Transaction included in block',
+                blockHash: status.asInBlock.toHex(),
+              });
+            }
+  
+            if (dispatchError) {
+              let errorMessage = dispatchError.toString();
+  
+              if (dispatchError.isModule) {
+                const decoded = api.registry.findMetaError(
+                  dispatchError.asModule
+                );
+                errorMessage = `${decoded.section}.${decoded.name}: ${decoded.docs.join(' ')}`;
+              }
+  
+              onStatusUpdate?.({
+                status: 'error',
+                message: 'Transaction failed',
+                error: errorMessage,
+              });
+  
+              unsub?.();
+              resolve({ success: false, error: errorMessage });
+              return;
+            }
+  
+            if (status.isFinalized) {
+              onStatusUpdate?.({
+                status: 'finalized',
+                message: 'Transaction finalized',
+                blockHash: status.asFinalized.toHex(),
+              });
+  
+              unsub?.();
+              resolve({
+                success: true,
+                blockHash: status.asFinalized.toHex(),
+                transactionHash: extrinsic.hash.toHex(),
+              });
+            }
           }
-
-          onStatusUpdate?.({
-            status: 'finalized',
-            message: 'Transaction finalized',
-            blockHash: status.asFinalized.toHex(),
-          });
-
-          unsub();
-        }
+        );
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Unknown error';
+  
+        onStatusUpdate?.({
+          status: 'error',
+          message: 'Transaction failed',
+          error: message,
+        });
+  
+        resolve({ success: false, error: message });
       }
-    );
-
-    // Wait for finalization
-    await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error('Transaction timeout'));
-      }, 60000); // 60 second timeout
-
-      const checkStatus = setInterval(() => {
-        if (blockHash) {
-          clearTimeout(timeout);
-          clearInterval(checkStatus);
-          resolve(true);
-        }
-      }, 100);
     });
-
-    return {
-      success: true,
-      blockHash,
-      transactionHash: txHash,
-    };
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    
-    onStatusUpdate?.({
-      status: 'error',
-      message: 'Transaction failed',
-      error: errorMessage,
-    });
-
-    return {
-      success: false,
-      error: errorMessage,
-    };
   }
-}
-
+  
 /**
  * DID Pallet Transactions
  */
@@ -7223,13 +7695,29 @@ export class CredentialTransactions {
     expiresAt: number | null,
     onStatusUpdate?: (status: TransactionStatus) => void
   ): Promise<TransactionResult> {
+    // Map UI credential types to blockchain enum variants
+    const typeMapping: Record<string, string> = {
+      "Bachelor's Degree": "Degree",
+      "Master's Degree": "MastersDegree",
+      "Doctorate (PhD)": "Doctorate",
+      "Certificate": "Certificate",
+      "Transcript": "Transcript",
+      "Professional Certification": "ProfessionalCertification",
+      "Other": "Other",
+    };
+  
+    const blockchainType = typeMapping[credentialType] || "Other";
+    
+    console.log('📋 Mapping credential type:', credentialType, '->', blockchainType);
+  
     const tx = this.api.tx.credential.issueCredential(
       holder,
       credentialHash,
-      credentialType,
+      blockchainType, // Use mapped type
       metadata,
       expiresAt
     );
+    
     return submitTransaction(this.api, account, tx, onStatusUpdate);
   }
 
@@ -7336,15 +7824,15 @@ export const CREDENTIAL_STATUS = {
 } as const;
 
 // Credential types
-export const CREDENTIAL_TYPES = [
-  'Bachelor\'s Degree',
-  'Master\'s Degree',
-  'Doctorate (PhD)',
-  'Certificate',
-  'Transcript',
-  'Professional Certification',
-  'Other',
-] as const;
+// export const CREDENTIAL_TYPES = [
+//   'Bachelor\'s Degree',
+//   'Master\'s Degree',
+//   'Doctorate (PhD)',
+//   'Certificate',
+//   'Transcript',
+//   'Professional Certification',
+//   'Other',
+// ] as const;
 
 // Institution types
 export const INSTITUTION_TYPES = [
@@ -7392,6 +7880,38 @@ export const FILE_UPLOAD = {
   MAX_SIZE: 10 * 1024 * 1024, // 10MB
   ACCEPTED_TYPES: ['application/pdf', 'image/png', 'image/jpeg'],
 } as const;
+
+export const CREDENTIAL_TYPES = [
+  'Bachelor\'s Degree',
+  'Master\'s Degree',
+  'Doctorate (PhD)',
+  'Certificate',
+  'Transcript',
+  'Professional Certification',
+  'Other',
+] as const;
+
+// Blockchain enum mapping
+export const CREDENTIAL_TYPE_ENUM_MAP: Record<string, string> = {
+  "Bachelor's Degree": "Degree",
+  "Master's Degree": "MastersDegree",
+  "Doctorate (PhD)": "Doctorate",
+  "Certificate": "Certificate",
+  "Transcript": "Transcript",
+  "Professional Certification": "ProfessionalCertification",
+  "Other": "Other",
+};
+
+// Reverse mapping for displaying blockchain data
+export const CREDENTIAL_TYPE_DISPLAY_MAP: Record<string, string> = {
+  "Degree": "Bachelor's Degree",
+  "MastersDegree": "Master's Degree",
+  "Doctorate": "Doctorate (PhD)",
+  "Certificate": "Certificate",
+  "Transcript": "Transcript",
+  "ProfessionalCertification": "Professional Certification",
+  "Other": "Other",
+};
 </file>
 
 <file path="src/lib/utils/env.ts">
@@ -7438,6 +7958,403 @@ export const ENV = {
   
   // Export typed env for use in app
   export type AppEnv = typeof ENV;
+</file>
+
+<file path="src/pages/AdminVerification.tsx">
+// src/pages/admin/AdminVerification.tsx - FIXED VERSION
+import { useState, useEffect } from 'react';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { Badge } from '@/components/ui/Badge';
+import { AlertCircle, CheckCircle, XCircle, Loader2, Building2, Shield } from 'lucide-react';
+import { usePolkadotContext } from '@/providers/PolkadotProvider';
+import { useWalletStore } from '@/store/wallet.store';
+import { hexToString } from '@polkadot/util';
+import { web3FromAddress } from '@polkadot/extension-dapp';
+import { toast } from 'sonner';
+
+interface PendingInstitution {
+  address: string;
+  name: string;
+  registeredAt: number;
+  verified: boolean;
+}
+
+export default function AdminVerification() {
+  const { api, isReady } = usePolkadotContext();
+  const { account } = useWalletStore();
+  const [institutions, setInstitutions] = useState<PendingInstitution[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [verifying, setVerifying] = useState<string | null>(null);
+  const [revoking, setRevoking] = useState<string | null>(null);
+
+  // Helper to decode institution names
+  const decodeInstitutionName = (name: string | any): string => {
+    try {
+      if (typeof name === 'string' && !name.startsWith('0x')) {
+        return name;
+      }
+      if (typeof name === 'string' && name.startsWith('0x')) {
+        const decoded = hexToString(name);
+        return decoded.replace(/\0/g, '');
+      }
+      if (name && (name instanceof Uint8Array || Array.isArray(name))) {
+        const nameStr = String.fromCharCode(...Array.from(name));
+        return nameStr.replace(/\0/g, '');
+      }
+      return String(name);
+    } catch (error) {
+      console.error('Error decoding institution name:', error);
+      return String(name);
+    }
+  };
+
+  // Fetch all institutions
+  const fetchInstitutions = async () => {
+    if (!api || !isReady) return;
+
+    setLoading(true);
+    try {
+      const entries = await api.query.did.institutions.entries();
+      
+      const institutionsList: PendingInstitution[] = entries
+        .map(([key, value]) => {
+          if (value.isEmpty) return null;
+          
+          const address = key.args[0].toString();
+          const data = value.toJSON() as any;
+          
+          return {
+            address,
+            name: decodeInstitutionName(data.name),
+            registeredAt: data.registeredAt || Date.now(),
+            verified: data.verified || false,
+          };
+        })
+        .filter(Boolean) as PendingInstitution[];
+
+      setInstitutions(institutionsList);
+      console.log('✅ Fetched institutions:', institutionsList);
+    } catch (error) {
+      console.error('❌ Error fetching institutions:', error);
+      toast.error('Failed to fetch institutions');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isReady && api) {
+      fetchInstitutions();
+    }
+  }, [isReady, api]);
+
+  // Handle verification with proper signer
+  const handleVerify = async (institutionDid: string) => {
+    if (!api || !account) {
+      toast.error('Wallet not connected');
+      return;
+    }
+
+    setVerifying(institutionDid);
+
+    try {
+      console.log('🔐 Starting verification for:', institutionDid);
+
+      // Get the signer
+      const injector = await web3FromAddress(account.address);
+
+      // IMPORTANT: Wrap with sudo.sudo() since this requires root origin
+      const verifyTx = api.tx.did.verifyInstitution(institutionDid);
+      const tx = api.tx.sudo.sudo(verifyTx);
+      
+      console.log('📝 Created SUDO transaction, requesting signature...');
+
+      // Sign and send
+      await tx.signAndSend(
+        account.address,
+        { signer: injector.signer },
+        ({ status, events, dispatchError }) => {
+          console.log('📡 Transaction status:', status.type);
+
+          if (status.isFinalized) {
+            console.log('✅ Transaction finalized:', status.asFinalized.toHex());
+
+            if (dispatchError) {
+              console.error('❌ Dispatch error:', dispatchError.toString());
+              
+              if (dispatchError.isModule) {
+                const decoded = api.registry.findMetaError(dispatchError.asModule);
+                throw new Error(`${decoded.section}.${decoded.name}: ${decoded.docs.join(' ')}`);
+              } else {
+                throw new Error(dispatchError.toString());
+              }
+            }
+
+            // Success - update local state
+            setInstitutions(prev =>
+              prev.map(inst =>
+                inst.did === institutionDid
+                  ? { ...inst, verified: true }
+                  : inst
+              )
+            );
+
+            toast.success('Institution verified successfully!');
+          }
+        }
+      );
+    } catch (error: any) {
+      console.error('❌ Verification failed:', error);
+      toast.error(error.message || 'Failed to verify institution');
+    } finally {
+      setVerifying(null);
+    }
+  };
+
+  // Handle revocation
+  const handleRevoke = async (institutionAddress: string) => {
+    if (!api || !account) {
+      toast.error('Please connect your wallet');
+      return;
+    }
+
+    if (!confirm('Are you sure you want to revoke this institution\'s verification?')) {
+      return;
+    }
+
+    setRevoking(institutionAddress);
+
+    try {
+      console.log('🔐 Starting revocation for:', institutionAddress);
+      
+      const injector = await web3FromAddress(account.address);
+      const tx = api.tx.did.revokeInstitution(institutionAddress);
+      
+      await tx.signAndSend(
+        account.address,
+        { signer: injector.signer },
+        ({ status, dispatchError }) => {
+          if (status.isFinalized) {
+            if (dispatchError) {
+              toast.error('Revocation failed');
+            } else {
+              toast.success('Institution revoked successfully');
+              fetchInstitutions();
+            }
+            setRevoking(null);
+          }
+        }
+      );
+    } catch (error: any) {
+      console.error('❌ Revocation failed:', error);
+      toast.error('Revocation failed', {
+        description: error.message || 'Unknown error',
+      });
+      setRevoking(null);
+    }
+  };
+
+  if (!isReady) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Card className="max-w-md">
+          <CardContent className="py-12 text-center">
+            <Loader2 className="h-8 w-8 animate-spin mx-auto mb-3 text-primary" />
+            <p className="text-muted-foreground">Connecting to blockchain...</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!account) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Card className="max-w-md">
+          <CardHeader>
+            <CardTitle className="flex items-center text-yellow-600">
+              <AlertCircle className="h-5 w-5 mr-2" />
+              Authentication Required
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-muted-foreground mb-4">
+              Please connect your wallet to access admin functions
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Note: You need to use a sudo/root account to verify institutions
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  const pendingInstitutions = institutions.filter(i => !i.verified);
+  const verifiedInstitutions = institutions.filter(i => i.verified);
+
+  return (
+    <div className="container mx-auto p-6 max-w-6xl">
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold flex items-center mb-2">
+          <Shield className="h-8 w-8 mr-3 text-primary" />
+          Institution Verification
+        </h1>
+        <p className="text-muted-foreground">
+          Review and verify academic institutions
+        </p>
+      </div>
+
+      {/* Warning banner */}
+      <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 mb-6">
+        <div className="flex items-start space-x-3">
+          <AlertCircle className="h-5 w-5 text-yellow-600 dark:text-yellow-500 flex-shrink-0 mt-0.5" />
+          <div className="text-sm">
+            <p className="font-semibold text-yellow-800 dark:text-yellow-400">Admin Access Required</p>
+            <p className="text-yellow-700 dark:text-yellow-300 mt-1">
+              You must be using a sudo/root account (Alice, Bob, Charlie, etc.) to verify institutions.
+              Regular accounts cannot perform these operations.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-2xl font-bold">{institutions.length}</div>
+            <p className="text-sm text-muted-foreground">Total Institutions</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-2xl font-bold text-yellow-600">{pendingInstitutions.length}</div>
+            <p className="text-sm text-muted-foreground">Pending Verification</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-2xl font-bold text-green-600">{verifiedInstitutions.length}</div>
+            <p className="text-sm text-muted-foreground">Verified</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-xl font-semibold">Pending Institutions</h2>
+        <Button
+          variant="outline"
+          onClick={fetchInstitutions}
+          disabled={loading}
+        >
+          {loading ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            'Refresh'
+          )}
+        </Button>
+      </div>
+
+      {loading ? (
+        <Card>
+          <CardContent className="py-12 text-center">
+            <Loader2 className="h-8 w-8 animate-spin mx-auto mb-3 text-primary" />
+            <p className="text-muted-foreground">Loading institutions...</p>
+          </CardContent>
+        </Card>
+      ) : pendingInstitutions.length === 0 ? (
+        <Card>
+          <CardContent className="py-12 text-center">
+            <CheckCircle className="h-12 w-12 mx-auto mb-3 text-green-500 opacity-50" />
+            <p className="text-lg font-medium">No pending verifications</p>
+            <p className="text-sm text-muted-foreground mt-1">
+              All registered institutions have been reviewed
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid gap-4">
+          {pendingInstitutions.map((institution) => (
+            <Card key={institution.address} className="border-yellow-200 dark:border-yellow-800">
+              <CardContent className="pt-6">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center space-x-2 mb-2">
+                      <Building2 className="h-5 w-5 text-primary" />
+                      <h3 className="font-semibold text-lg">{institution.name}</h3>
+                      <Badge variant="warning">Pending</Badge>
+                    </div>
+                    <code className="text-xs text-muted-foreground block mb-2">
+                      {institution.address}
+                    </code>
+                    <p className="text-sm text-muted-foreground">
+                      Registered: {new Date(institution.registeredAt).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      onClick={() => handleVerify(institution.address)}
+                      disabled={verifying === institution.address}
+                    >
+                      {verifying === institution.address ? (
+                        <><Loader2 className="h-3 w-3 mr-1 animate-spin" /> Verifying...</>
+                      ) : (
+                        <><CheckCircle className="h-3 w-3 mr-1" /> Verify</>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Verified Institutions */}
+      {verifiedInstitutions.length > 0 && (
+        <>
+          <h2 className="text-xl font-semibold mt-8 mb-4">Verified Institutions</h2>
+          <div className="grid gap-4">
+            {verifiedInstitutions.map((institution) => (
+              <Card key={institution.address}>
+                <CardContent className="pt-6">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center space-x-2 mb-2">
+                        <Building2 className="h-5 w-5 text-primary" />
+                        <h3 className="font-semibold text-lg">{institution.name}</h3>
+                        <Badge variant="success">Verified</Badge>
+                      </div>
+                      <code className="text-xs text-muted-foreground block">
+                        {institution.address}
+                      </code>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleRevoke(institution.address)}
+                      disabled={revoking === institution.address}
+                      className="text-red-600"
+                    >
+                      {revoking === institution.address ? (
+                        <><Loader2 className="h-3 w-3 mr-1 animate-spin" /> Revoking...</>
+                      ) : (
+                        <><XCircle className="h-3 w-3 mr-1" /> Revoke</>
+                      )}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 </file>
 
 <file path="src/pages/CreateDIDPage.tsx">
@@ -7731,33 +8648,18 @@ export default function Credentials() {
 
 <file path="src/pages/Dashboard.tsx">
 // src/pages/Dashboard.tsx
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
-import {
-  Award,
-  Building2,
-  CheckCircle,
-  Wallet,
-  AlertCircle,
-  Key,
-} from 'lucide-react';
-
 import { useWalletStore } from '@/store/wallet.store';
 import { useDIDStore } from '@/store/did.store';
 import { useBalance } from '@/hooks/blockchain/useBalance';
-
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardContent,
-} from '@/components/ui/Card';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
-
-import CreateDIDModal from '@/components/did/CreateDIDModal';
+import { Award, Building2, CheckCircle, Wallet, AlertCircle, Key } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import CreateDIDPage from './CreateDIDPage';
+import { useState } from 'react';
 import { DID_STATUS } from '@/lib/utils/constants';
+import CreateDIDModal from '@/components/did/CreateDIDModal';
 
 export default function Dashboard() {
   const { isConnected, account } = useWalletStore();
@@ -7765,20 +8667,7 @@ export default function Dashboard() {
   const { balance, loading: balanceLoading } = useBalance();
   const [showCreateDID, setShowCreateDID] = useState(false);
 
-  const didStatusConfig = (() => {
-    switch (status) {
-      case DID_STATUS.ACTIVE:
-        return { label: 'Active', variant: 'success' as const };
-      case DID_STATUS.INACTIVE:
-        return { label: 'Inactive', variant: 'warning' as const };
-      case DID_STATUS.PENDING:
-        return { label: 'Pending', variant: 'warning' as const };
-      default:
-        return { label: 'No DID', variant: 'outline' as const };
-    }
-  })();
-
-  // Wallet not connected
+  // Not connected - show connection prompt
   if (!isConnected) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -7792,31 +8681,29 @@ export default function Dashboard() {
               Please connect your Polkadot wallet to access the dashboard and manage your academic credentials
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              You'll need a Polkadot wallet extension to continue:
-            </p>
-            <ul className="text-sm space-y-2 list-disc list-inside text-muted-foreground">
-              <li>Polkadot.js Extension</li>
-              <li>Talisman</li>
-              <li>SubWallet</li>
-            </ul>
-            <Button asChild className="w-full">
-              <a
-                href="https://polkadot.js.org/extension/"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Install Wallet Extension
-              </a>
-            </Button>
+          <CardContent>
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                You'll need a Polkadot wallet extension to continue:
+              </p>
+              <ul className="text-sm space-y-2 list-disc list-inside text-muted-foreground">
+                <li>Polkadot.js Extension</li>
+                <li>Talisman</li>
+                <li>SubWallet</li>
+              </ul>
+              <Button asChild className="w-full">
+                <a href="https://polkadot.js.org/extension/" target="_blank" rel="noopener noreferrer">
+                  Install Wallet Extension
+                </a>
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </div>
     );
   }
 
-  // No DID yet
+  // No DID - show create DID prompt
   if (!hasDID) {
     return (
       <>
@@ -7827,7 +8714,7 @@ export default function Dashboard() {
               Let's create your decentralized identifier to get started
             </p>
           </div>
-
+          
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center">
@@ -7840,16 +8727,16 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-                <p className="text-sm text-blue-800 dark:text-blue-400 font-semibold">
-                  What is a DID?
+                <p className="text-sm text-blue-800 dark:text-blue-400">
+                  <strong>What is a DID?</strong>
                 </p>
                 <p className="text-sm text-blue-700 dark:text-blue-300 mt-2">
-                  A DID is your unique identity on the blockchain. It allows institutions to issue
-                  credentials directly to you and enables anyone to verify your credentials without
-                  contacting the issuing institution.
+                  A DID is your unique identity on the blockchain. It allows institutions to issue 
+                  credentials directly to you, and enables anyone to verify your credentials without 
+                  needing to contact the issuing institution.
                 </p>
               </div>
-
+              
               <Button onClick={() => setShowCreateDID(true)} className="w-full">
                 <Key className="h-4 w-4 mr-2" />
                 Create DID Now
@@ -7866,48 +8753,24 @@ export default function Dashboard() {
     );
   }
 
-  // DID exists but not active
-  if (status !== DID_STATUS.ACTIVE) {
-    return (
-      <div className="max-w-3xl mx-auto py-12">
-        <Card>
-          <CardHeader>
-            <CardTitle>DID Not Active</CardTitle>
-            <CardDescription>
-              Your decentralized identity is currently{' '}
-              {didStatusConfig.label.toLowerCase()}.
-              You must have an active DID to manage credentials.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex items-center gap-2">
-            <Badge variant={didStatusConfig.variant}>
-              {didStatusConfig.label}
-            </Badge>
-            {isInstitution && (
-              <Badge variant="secondary">Institution</Badge>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  // Active DID – full dashboard
+  // Has DID - show full dashboard
   return (
     <div className="space-y-6">
-      {/* Welcome */}
+      {/* Welcome Section */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold mb-2">
             Welcome back, {account?.name || 'there'}!
           </h1>
           <p className="text-muted-foreground">
-            {isInstitution
-              ? 'Manage your institution and issue credentials'
-              : 'Manage your credentials and academic identity'}
+            {isInstitution 
+              ? 'Manage your institution and issue credentials' 
+              : 'Manage your credentials and academic identity'
+            }
           </p>
         </div>
-
+        
+        {/* Balance Display */}
         {balance && (
           <Card className="bg-gradient-to-br from-primary/10 to-purple-500/10">
             <CardContent className="pt-6">
@@ -7934,21 +8797,17 @@ export default function Dashboard() {
               </code>
             </div>
             <div className="flex gap-2">
-              <Badge variant={didStatusConfig.variant}>
-                {didStatusConfig.label}
-              </Badge>
-              {isInstitution && (
-                <Badge variant="secondary">Institution</Badge>
-              )}
+              <Badge variant="success">Active</Badge>
+              {isInstitution && <Badge variant="secondary">Institution</Badge>}
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Stats */}
+      {/* Quick Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
               {isInstitution ? 'Issued Credentials' : 'Total Credentials'}
             </CardTitle>
@@ -7963,7 +8822,7 @@ export default function Dashboard() {
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
               {isInstitution ? 'Active Recipients' : 'Verified'}
             </CardTitle>
@@ -7978,16 +8837,114 @@ export default function Dashboard() {
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Reputation</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">
+              Reputation
+            </CardTitle>
             <Building2 className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">0</div>
-            <p className="text-xs text-muted-foreground">Reputation score</p>
+            <p className="text-xs text-muted-foreground">
+              Reputation score
+            </p>
           </CardContent>
         </Card>
       </div>
+
+      {/* Quick Actions */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Quick Actions</CardTitle>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {isInstitution ? (
+            <>
+              <Link to="/institution/issue">
+                <Button variant="outline" className="w-full justify-start h-auto py-4">
+                  <div className="flex flex-col items-start w-full">
+                    <div className="flex items-center space-x-2 mb-1">
+                      <Award className="h-4 w-4" />
+                      <span className="font-semibold">Issue Credential</span>
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      Issue a new credential to a student
+                    </span>
+                  </div>
+                </Button>
+              </Link>
+              <Link to="/institution/issued">
+                <Button variant="outline" className="w-full justify-start h-auto py-4">
+                  <div className="flex flex-col items-start w-full">
+                    <div className="flex items-center space-x-2 mb-1">
+                      <CheckCircle className="h-4 w-4" />
+                      <span className="font-semibold">View Issued</span>
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      See all credentials you've issued
+                    </span>
+                  </div>
+                </Button>
+              </Link>
+            </>
+          ) : (
+            <>
+              <Link to="/credentials">
+                <Button variant="outline" className="w-full justify-start h-auto py-4">
+                  <div className="flex flex-col items-start w-full">
+                    <div className="flex items-center space-x-2 mb-1">
+                      <Award className="h-4 w-4" />
+                      <span className="font-semibold">My Credentials</span>
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      View and manage your credentials
+                    </span>
+                  </div>
+                </Button>
+              </Link>
+              <Link to="/verify">
+                <Button variant="outline" className="w-full justify-start h-auto py-4">
+                  <div className="flex flex-col items-start w-full">
+                    <div className="flex items-center space-x-2 mb-1">
+                      <CheckCircle className="h-4 w-4" />
+                      <span className="font-semibold">Verify Credential</span>
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      Verify any academic credential
+                    </span>
+                  </div>
+                </Button>
+              </Link>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Register as Institution */}
+      {!isInstitution && (
+        <Card className="border-primary/50">
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-start space-x-4">
+                <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <Building2 className="h-6 w-6 text-primary" />
+                </div>
+                <div>
+                  <h3 className="font-semibold mb-1">Are you an institution?</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Register as an educational institution to issue credentials to students
+                  </p>
+                </div>
+              </div>
+              <Button asChild>
+                <Link to="/institution">
+                  Register Now
+                </Link>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
@@ -8118,91 +9075,375 @@ export default function Home() {
 </file>
 
 <file path="src/pages/Institution.tsx">
-// src/pages/Institution.tsx
-import { useState } from 'react';
+// src/pages/Institution.tsx - REPLACE THIS FILE
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useDIDStore } from '@/store/did.store';
+import { useWalletStore } from '@/store/wallet.store';
+import { usePolkadotContext } from '@/providers/PolkadotProvider';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
-import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/Button';
-import { Building2, FileText, Users, Award, Plus } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
-import InstitutionRegistration from '@/components/did/InstitutionRegistration';
+import { 
+  Building2, 
+  FileText, 
+  Users, 
+  Award, 
+  Plus, 
+  RefreshCw, 
+  Loader2,
+  TrendingUp,
+  CheckCircle,
+  AlertCircle
+} from 'lucide-react';
+import { toast } from 'sonner';
+
+interface InstitutionData {
+  name: string;
+  did: string;
+  verified: boolean;
+  registeredAt: number;
+}
+
+interface ReputationScore {
+  credentialsIssued: number;
+  credentialsVerified: number;
+  endorsementsReceived: number;
+  endorsementsGiven: number;
+  totalScore: number;
+}
 
 export default function Institution() {
-  const { isInstitution, institutionName } = useDIDStore();
-  const [showRegistration, setShowRegistration] = useState(!isInstitution);
+  const navigate = useNavigate();
+  const { isInstitution, institutionName, didAddress } = useDIDStore();
+  const { isConnected } = useWalletStore();
+  const { api, isReady } = usePolkadotContext();
 
-  if (showRegistration && !isInstitution) {
+  const [institutionData, setInstitutionData] = useState<InstitutionData | null>(null);
+  const [reputation, setReputation] = useState<ReputationScore | null>(null);
+  const [issuedCount, setIssuedCount] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Fetch institution data from blockchain
+  useEffect(() => {
+    if (isConnected && isInstitution && didAddress && isReady && api) {
+      fetchInstitutionData();
+    }
+  }, [isConnected, isInstitution, didAddress, isReady, api]);
+
+  const fetchInstitutionData = async () => {
+    if (!api || !didAddress) return;
+
+    setLoading(true);
+    try {
+      console.log('🏛️ Fetching institution data for:', didAddress);
+
+      // Fetch institution info
+      const institutionInfo = await api.query.did.institutions(didAddress);
+      
+      if (institutionInfo.isEmpty) {
+        console.warn('No institution data found');
+        toast.error('Institution data not found');
+        setLoading(false);
+        return;
+      }
+
+      const instData = institutionInfo.toJSON() as any;
+      console.log('✅ Institution data:', instData);
+
+      // Decode institution name from hex
+      let decodedName = institutionName || 'Institution';
+      if (instData.name) {
+        try {
+          // Remove 0x prefix if present
+          const hexString = instData.name.startsWith('0x') ? instData.name.slice(2) : instData.name;
+          // Convert hex to string
+          const bytes = new Uint8Array(hexString.match(/.{1,2}/g)?.map((byte: string) => parseInt(byte, 16)) || []);
+          const decoded = new TextDecoder().decode(bytes);
+          decodedName = decoded || decodedName;
+          console.log('✅ Decoded institution name:', decodedName);
+        } catch (error) {
+          console.warn('Failed to decode institution name:', error);
+        }
+      }
+
+      setInstitutionData({
+        name: decodedName,
+        did: instData.did || didAddress,
+        verified: instData.verified || false,
+        registeredAt: instData.registeredAt || Date.now(),
+      });
+
+      // Fetch reputation score
+      const reputationData = await api.query.reputation.reputationScores(didAddress);
+      
+      if (!reputationData.isEmpty) {
+        const repData = reputationData.toJSON() as any;
+        console.log('✅ Reputation data:', repData);
+        
+        setReputation({
+          credentialsIssued: repData.credentialsIssued || 0,
+          credentialsVerified: repData.credentialsVerified || 0,
+          endorsementsReceived: repData.endorsementsReceived || 0,
+          endorsementsGiven: repData.endorsementsGiven || 0,
+          totalScore: repData.totalScore || 0,
+        });
+      } else {
+        setReputation({
+          credentialsIssued: 0,
+          credentialsVerified: 0,
+          endorsementsReceived: 0,
+          endorsementsGiven: 0,
+          totalScore: 0,
+        });
+      }
+
+      // Fetch issued credentials count
+      const issuedCredentials = await api.query.credential.credentialsByIssuer(didAddress);
+      
+      if (!issuedCredentials.isEmpty) {
+        const credentials = issuedCredentials.toJSON() as any[];
+        console.log('✅ Issued credentials count:', credentials.length);
+        setIssuedCount(credentials.length);
+      } else {
+        setIssuedCount(0);
+      }
+
+      toast.success('Institution data loaded from blockchain');
+    } catch (error: any) {
+      console.error('❌ Failed to fetch institution data:', error);
+      toast.error('Failed to load institution data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await fetchInstitutionData();
+    setRefreshing(false);
+    toast.success('Data refreshed');
+  };
+
+  // Not connected
+  if (!isConnected) {
     return (
-      <div className="py-8">
-        <InstitutionRegistration 
-          onSuccess={() => setShowRegistration(false)}
-          onCancel={() => setShowRegistration(false)}
-        />
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Card className="max-w-md">
+          <CardHeader>
+            <div className="flex items-center space-x-2 text-yellow-600 mb-2">
+              <AlertCircle className="h-5 w-5" />
+              <CardTitle>Connect Your Wallet</CardTitle>
+            </div>
+            <CardDescription>
+              Please connect your wallet to view your institution profile
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      </div>
+    );
+  }
+
+  // Not an institution
+  if (!isInstitution) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Card className="max-w-md">
+          <CardHeader>
+            <div className="flex items-center space-x-2 text-red-600 mb-2">
+              <AlertCircle className="h-5 w-5" />
+              <CardTitle>Institution Access Required</CardTitle>
+            </div>
+            <CardDescription>
+              You need to register as an institution to access this page
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button onClick={() => navigate('/dashboard')} className="w-full">
+              Go to Dashboard
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Loading
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Card className="max-w-md">
+          <CardContent className="py-12 text-center">
+            <Loader2 className="h-8 w-8 animate-spin mx-auto mb-3 text-primary" />
+            <p className="text-muted-foreground">Loading institution data from blockchain...</p>
+          </CardContent>
+        </Card>
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">{institutionName || 'Institution Profile'}</h1>
+          <h1 className="text-3xl font-bold flex items-center">
+            <Building2 className="h-8 w-8 mr-3 text-primary" />
+            {institutionData?.name || 'Institution Profile'}
+          </h1>
           <p className="text-muted-foreground mt-1">
             Manage your institution and issue credentials
           </p>
         </div>
-        <Badge variant="success" className="text-sm px-3 py-1">
-          Verified Institution
-        </Badge>
+        <div className="flex items-center space-x-3">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRefresh}
+            disabled={refreshing}
+          >
+            <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+          {institutionData?.verified ? (
+            <Badge variant="success" className="text-sm px-3 py-1">
+              <CheckCircle className="h-3 w-3 mr-1" />
+              Verified Institution
+            </Badge>
+          ) : (
+            <Badge variant="warning" className="text-sm px-3 py-1">
+              <AlertCircle className="h-3 w-3 mr-1" />
+              Pending Verification
+            </Badge>
+          )}
+        </div>
       </div>
 
-      {/* Stats */}
+      {/* Institution Info */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Institution Information</CardTitle>
+          <CardDescription>Your blockchain identity</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex justify-between">
+            <span className="text-sm text-muted-foreground">DID Address</span>
+            <code className="text-xs font-mono bg-muted px-2 py-1 rounded">
+              {didAddress}
+            </code>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-sm text-muted-foreground">Registered</span>
+            <span className="text-sm">
+              {institutionData ? new Date(institutionData.registeredAt).toLocaleDateString() : 'Unknown'}
+            </span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-sm text-muted-foreground">Status</span>
+            <Badge variant={institutionData?.verified ? 'success' : 'warning'}>
+              {institutionData?.verified ? 'Verified' : 'Pending'}
+            </Badge>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Stats from Blockchain */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
+            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center">
+              <FileText className="h-4 w-4 mr-2" />
               Credentials Issued
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">0</div>
+            <div className="text-2xl font-bold">{issuedCount}</div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Total credentials on blockchain
+            </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Active Recipients
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">0</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
+            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center">
+              <Users className="h-4 w-4 mr-2" />
               Endorsements
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">0</div>
+            <div className="text-2xl font-bold">{reputation?.endorsementsReceived || 0}</div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Received from peers
+            </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Reputation
+            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center">
+              <Award className="h-4 w-4 mr-2" />
+              Reputation Score
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">0</div>
+            <div className="text-2xl font-bold">{reputation?.totalScore || 0}</div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Out of 1000
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center">
+              <TrendingUp className="h-4 w-4 mr-2" />
+              Verifications
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{reputation?.credentialsVerified || 0}</div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Credentials verified
+            </p>
           </CardContent>
         </Card>
       </div>
+
+      {/* Reputation Breakdown */}
+      {reputation && reputation.totalScore > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Reputation Breakdown</CardTitle>
+            <CardDescription>How your score is calculated</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm">Credentials Issued (×10)</span>
+              <span className="font-semibold">
+                {reputation.credentialsIssued} × 10 = {reputation.credentialsIssued * 10}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm">Endorsements Received (×20)</span>
+              <span className="font-semibold">
+                {reputation.endorsementsReceived} × 20 = {reputation.endorsementsReceived * 20}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm">Verifications Done (×5)</span>
+              <span className="font-semibold">
+                {reputation.credentialsVerified} × 5 = {reputation.credentialsVerified * 5}
+              </span>
+            </div>
+            <div className="pt-3 border-t flex items-center justify-between">
+              <span className="font-semibold">Total Score</span>
+              <span className="text-2xl font-bold text-primary">{reputation.totalScore}</span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Quick Actions */}
       <Card>
@@ -8210,21 +9451,27 @@ export default function Institution() {
           <CardTitle>Quick Actions</CardTitle>
         </CardHeader>
         <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Button variant="outline" className="justify-start h-auto py-4" asChild>
-            <Link to="/institution/issue">
-              <div className="flex flex-col items-start w-full">
-                <div className="flex items-center space-x-2 mb-1">
-                  <Plus className="h-4 w-4" />
-                  <span className="font-semibold">Issue Credential</span>
-                </div>
-                <span className="text-xs text-muted-foreground">
-                  Issue a new credential to a student
-                </span>
+          <Button 
+            variant="outline" 
+            className="justify-start h-auto py-4"
+            onClick={() => navigate('/institution/issue')}
+          >
+            <div className="flex flex-col items-start w-full">
+              <div className="flex items-center space-x-2 mb-1">
+                <Plus className="h-4 w-4" />
+                <span className="font-semibold">Issue Credential</span>
               </div>
-            </Link>
+              <span className="text-xs text-muted-foreground">
+                Issue a new credential to a student
+              </span>
+            </div>
           </Button>
 
-          <Button variant="outline" className="justify-start h-auto py-4">
+          <Button 
+            variant="outline" 
+            className="justify-start h-auto py-4"
+            onClick={() => navigate('/institution/issued')}
+          >
             <div className="flex flex-col items-start w-full">
               <div className="flex items-center space-x-2 mb-1">
                 <FileText className="h-4 w-4" />
@@ -8236,34 +9483,39 @@ export default function Institution() {
             </div>
           </Button>
 
-          <Button variant="outline" className="justify-start h-auto py-4">
+          <Button 
+            variant="outline" 
+            className="justify-start h-auto py-4"
+            onClick={() => navigate('/institution/requests')}
+          >
             <div className="flex flex-col items-start w-full">
               <div className="flex items-center space-x-2 mb-1">
                 <Users className="h-4 w-4" />
-                <span className="font-semibold">Manage Profile</span>
+                <span className="font-semibold">Requests</span>
               </div>
               <span className="text-xs text-muted-foreground">
-                Update institution information
+                Review credential requests
               </span>
             </div>
           </Button>
         </CardContent>
       </Card>
 
-      {/* Recent Activity */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Recent Activity</CardTitle>
-          <CardDescription>Latest credential issuances and updates</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="text-center py-8 text-muted-foreground">
-            <Award className="h-12 w-12 mx-auto mb-3 opacity-50" />
-            <p>No activity yet</p>
-            <p className="text-sm mt-1">Start by issuing your first credential</p>
+      {/* Blockchain Status */}
+      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+        <div className="flex items-start space-x-3">
+          <CheckCircle className="h-5 w-5 text-blue-600 dark:text-blue-500 flex-shrink-0 mt-0.5" />
+          <div className="text-sm flex-1">
+            <p className="font-semibold text-blue-800 dark:text-blue-400">
+              Connected to Blockchain
+            </p>
+            <p className="text-blue-700 dark:text-blue-300 mt-1">
+              All data is fetched directly from the blockchain in real-time. 
+              Click refresh to update with the latest information.
+            </p>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   );
 }
@@ -9639,12 +10891,13 @@ export function PolkadotProvider({ children }: PolkadotProviderProps) {
 </file>
 
 <file path="src/providers/WalletProvider.tsx">
-// src/providers/WalletProvider.tsx - Updated with DID checking
+// src/providers/WalletProvider.tsx - FIXED VERSION
 import { createContext, useContext, ReactNode, useEffect } from 'react';
 import { useWalletStore } from '@/store/wallet.store';
 import { useDIDStore } from '@/store/did.store';
 import { usePolkadotContext } from './PolkadotProvider';
 import { toast } from 'sonner';
+import { hexToString } from '@polkadot/util';
 
 interface WalletContextType {
   enableWallet: () => Promise<void>;
@@ -9671,7 +10924,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
       try {
         const { web3Enable, web3Accounts } = await import('@polkadot/extension-dapp');
         
-        // Check if extension is already authorized
         const extensions = await web3Enable('Academic Verify');
         
         if (extensions.length > 0) {
@@ -9697,7 +10949,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
               })),
             });
 
-            // After wallet connects, check for DID on blockchain
             if (isReady && api) {
               checkDIDOnBlockchain(account.address);
             }
@@ -9711,7 +10962,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
     checkConnection();
   }, [isReady, api]);
 
-  // Check if DID exists on blockchain when wallet connects or blockchain becomes ready
   useEffect(() => {
     const { account } = useWalletStore.getState();
     if (isReady && api && account?.address) {
@@ -9719,21 +10969,47 @@ export function WalletProvider({ children }: WalletProviderProps) {
     }
   }, [isReady, api]);
 
-  // Function to check if DID exists on blockchain
+  // Helper function to decode hex-encoded institution names
+  const decodeInstitutionName = (name: string | any): string => {
+    try {
+      // If it's already a string and doesn't start with 0x, return as-is
+      if (typeof name === 'string' && !name.startsWith('0x')) {
+        return name;
+      }
+
+      // If it's a hex string (starts with 0x)
+      if (typeof name === 'string' && name.startsWith('0x')) {
+        const decoded = hexToString(name);
+        // Remove any null bytes
+        return decoded.replace(/\0/g, '');
+      }
+
+      // If it's a Uint8Array or array-like
+      if (name && (name instanceof Uint8Array || Array.isArray(name))) {
+        const nameStr = String.fromCharCode(...Array.from(name));
+        return nameStr.replace(/\0/g, '');
+      }
+
+      // Fallback
+      return String(name);
+    } catch (error) {
+      console.error('Error decoding institution name:', error);
+      return String(name);
+    }
+  };
+
   const checkDIDOnBlockchain = async (address: string) => {
     if (!api || !isReady) return;
 
     try {
       console.log('🔍 Checking for existing DID on blockchain for:', address);
 
-      // Query the blockchain for DID
       const didDoc = await api.query.did?.didDocuments(address);
       
       if (didDoc && !didDoc.isEmpty) {
         const didData = didDoc.toJSON() as any;
         console.log('✅ Found existing DID on blockchain:', didData);
 
-        // Update DID store with blockchain data
         const publicKeys = didData.publicKeys?.map((key: any, index: number) => ({
           id: key.keyId || `key_${index}`,
           keyType: key.keyType || 'Ed25519',
@@ -9748,17 +11024,25 @@ export function WalletProvider({ children }: WalletProviderProps) {
         const institution = await api.query.did?.institutions(address);
         if (institution && !institution.isEmpty) {
           const instData = institution.toJSON() as any;
-          console.log('🏛️ Found institution data:', instData);
-          useDIDStore.getState().setInstitution(instData.name || 'Institution');
+          console.log('🏛️ Found institution data (raw):', instData);
+          
+          // Decode the institution name properly
+          const decodedName = decodeInstitutionName(instData.name);
+          console.log('✅ Decoded institution name:', decodedName);
+          
+          useDIDStore.getState().setInstitution(decodedName);
+          
+          toast.success('Institution loaded', {
+            description: `Welcome back, ${decodedName}`,
+          });
+        } else {
+          toast.success('DID loaded from blockchain', {
+            description: `Found your existing DID: ${address.slice(0, 8)}...`,
+          });
         }
-
-        toast.success('DID loaded from blockchain', {
-          description: `Found your existing DID: ${address.slice(0, 8)}...`,
-        });
       } else {
         console.log('ℹ️ No DID found on blockchain for this address');
         
-        // Check local storage for DID (in case blockchain is unavailable)
         const localDID = useDIDStore.getState();
         if (localDID.didAddress === address && localDID.hasDID) {
           console.log('📦 Using DID from local storage');
@@ -9766,14 +11050,12 @@ export function WalletProvider({ children }: WalletProviderProps) {
             description: 'Blockchain connection unavailable',
           });
         } else {
-          // Clear any stale DID data
           useDIDStore.getState().clearDID();
         }
       }
     } catch (error) {
       console.error('❌ Error checking DID on blockchain:', error);
       
-      // Fall back to local storage
       const localDID = useDIDStore.getState();
       if (localDID.didAddress === address && localDID.hasDID) {
         console.log('📦 Using DID from local storage (blockchain query failed)');
@@ -9783,12 +11065,10 @@ export function WalletProvider({ children }: WalletProviderProps) {
 
   const enableWallet = async () => {
     try {
-      // Dynamic import to avoid build issues
       const { web3Accounts, web3Enable } = await import('@polkadot/extension-dapp');
       
       console.log('🔌 Attempting to connect to wallet extension...');
       
-      // Request access to extensions
       const extensions = await web3Enable('Academic Verify');
       
       if (extensions.length === 0) {
@@ -9805,7 +11085,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
 
       console.log(`✅ Found ${extensions.length} wallet extension(s)`);
 
-      // Get all accounts
       const allAccounts = await web3Accounts();
       
       if (allAccounts.length === 0) {
@@ -9818,10 +11097,8 @@ export function WalletProvider({ children }: WalletProviderProps) {
 
       console.log(`✅ Found ${allAccounts.length} account(s)`);
 
-      // Connect to the first account
       const account = allAccounts[0];
       
-      // Save connection state
       localStorage.setItem('wallet_address', account.address);
       
       useWalletStore.setState({
@@ -9842,7 +11119,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
         description: `Connected to ${account.meta.name || 'account'}`,
       });
 
-      // Check for existing DID on blockchain
       if (isReady && api) {
         await checkDIDOnBlockchain(account.address);
       }
@@ -9882,7 +11158,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
         description: `Switched to ${account.name || address.slice(0, 8) + '...'}`,
       });
 
-      // Check for DID on the new account
       if (isReady && api) {
         checkDIDOnBlockchain(address);
       }
@@ -10538,7 +11813,7 @@ export const REQUEST_STATUS_CONFIG = {
 </file>
 
 <file path="src/App.tsx">
-// src/App.tsx (Updated with new routes)
+// src/App.tsx - Complete with Admin Route
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
@@ -10558,10 +11833,9 @@ import Verify from './pages/Verify';
 import Institutions from './pages/Institutions';
 import Settings from './pages/Settings';
 import CreateDIDPage from './pages/CreateDIDPage';
-
-// New Request Pages
 import MyRequests from './pages/MyRequests';
 import InstitutionRequests from './pages/InstitutionRequests';
+import AdminVerification from './pages/AdminVerification';
 
 // Error Boundary
 import ErrorBoundary from './components/error/ErrorBoundary';
@@ -10620,6 +11894,9 @@ function App() {
                     <Route path="/institution/issue" element={<IssueCredential />} />
                     <Route path="/institution/issued" element={<IssuedCredentials />} />
                     <Route path="/institution/requests" element={<InstitutionRequests />} />
+                    
+                    {/* Admin Routes */}
+                    <Route path="/admin/verify-institutions" element={<AdminVerification />} />
                   </Routes>
                 </MainLayout>
               </Suspense>

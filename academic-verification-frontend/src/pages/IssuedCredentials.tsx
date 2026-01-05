@@ -15,9 +15,13 @@ import {
   XCircle,
   Calendar,
   User,
-  Loader2
+  Loader2,
+  RefreshCw,
+  AlertCircle
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useBlockchain } from '@/hooks/blockchain/useBlockchain';
+import { formatCredentialType } from '@/lib/blockchain/integration';
 
 interface IssuedCredential {
   id: string;
@@ -25,62 +29,95 @@ interface IssuedCredential {
   holderName?: string;
   credentialType: string;
   degreeName: string;
+  fieldOfStudy?: string;
   issuedAt: number;
   status: 'active' | 'revoked';
+  credentialHash: string;
 }
 
 export default function IssuedCredentials() {
   const navigate = useNavigate();
   const { isInstitution, didAddress } = useDIDStore();
+  const { queries, isReady, transactions, account } = useBlockchain();
+  
   const [credentials, setCredentials] = useState<IssuedCredential[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'revoked'>('all');
+  const [refreshing, setRefreshing] = useState(false);
+  const [revoking, setRevoking] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isInstitution) {
       navigate('/institution');
       return;
     }
-    fetchIssuedCredentials();
-  }, [isInstitution]);
+
+    if (isReady && queries && didAddress) {
+      fetchIssuedCredentials();
+    }
+  }, [isInstitution, isReady, queries, didAddress]);
 
   const fetchIssuedCredentials = async () => {
+    if (!queries || !didAddress) {
+      console.log('Missing queries or didAddress');
+      return;
+    }
+
     setLoading(true);
     try {
-      // TODO: Replace with actual blockchain query
-      // Query credentials where issuer = didAddress
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      console.log('📡 Fetching issued credentials for institution:', didAddress);
       
-      // Mock data
-      const mockCredentials: IssuedCredential[] = [
-        {
-          id: 'cred_1',
-          holder: '5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY',
-          holderName: 'John Doe',
-          credentialType: "Bachelor's Degree",
-          degreeName: 'B.S. in Computer Science',
-          issuedAt: Date.now() - 30 * 24 * 60 * 60 * 1000,
-          status: 'active',
-        },
-        {
-          id: 'cred_2',
-          holder: '5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty',
-          holderName: 'Jane Smith',
-          credentialType: "Master's Degree",
-          degreeName: 'M.S. in Data Science',
-          issuedAt: Date.now() - 60 * 24 * 60 * 60 * 1000,
-          status: 'active',
-        },
-      ];
+      // Fetch credentials issued by this institution from blockchain
+      const blockchainCredentials = await queries.credential.getCredentialsByIssuer(didAddress);
       
-      setCredentials(mockCredentials);
-    } catch (error) {
-      console.error('Failed to fetch issued credentials:', error);
-      toast.error('Failed to load credentials');
+      console.log('✅ Fetched issued credentials:', blockchainCredentials);
+      
+      if (blockchainCredentials.length === 0) {
+        console.log('ℹ️ No credentials issued yet');
+        setCredentials([]);
+        setLoading(false);
+        return;
+      }
+
+      // Process credentials and format for display
+      const processedCredentials: IssuedCredential[] = blockchainCredentials.map((cred) => {
+        const metadata = parseMetadata(cred.metadata);
+        
+        return {
+          id: cred.id,
+          holder: cred.holder,
+          holderName: undefined, // We'll fetch this if needed
+          credentialType: formatCredentialType(cred.credentialType),
+          degreeName: metadata.degreeName || 'Academic Credential',
+          fieldOfStudy: metadata.fieldOfStudy,
+          issuedAt: cred.issuedAt,
+          status: cred.revoked ? 'revoked' : 'active',
+          credentialHash: cred.credentialHash,
+        } as IssuedCredential;
+      });
+
+      console.log('✅ Processed credentials:', processedCredentials);
+      setCredentials(processedCredentials);
+      
+      if (processedCredentials.length > 0) {
+        toast.success(`Found ${processedCredentials.length} issued credential(s)`);
+      }
+    } catch (error: any) {
+      console.error('❌ Failed to fetch issued credentials:', error);
+      toast.error('Failed to load credentials', {
+        description: error.message || 'Check console for details',
+      });
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await fetchIssuedCredentials();
+    setRefreshing(false);
+    toast.success('Credentials refreshed');
   };
 
   const handleRevoke = async (credentialId: string) => {
@@ -88,27 +125,67 @@ export default function IssuedCredentials() {
       return;
     }
 
+    if (!transactions || !account) {
+      toast.error('Wallet not connected');
+      return;
+    }
+
+    setRevoking(credentialId);
+
     try {
-      // TODO: Call blockchain revoke_credential extrinsic
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      console.log('🔄 Revoking credential:', credentialId);
       
-      setCredentials(prev =>
-        prev.map(cred =>
-          cred.id === credentialId ? { ...cred, status: 'revoked' as const } : cred
-        )
+      const result = await transactions.credential.revokeCredential(
+        account,
+        credentialId,
+        (status) => {
+          console.log('Transaction status:', status);
+          if (status.status === 'signing') {
+            toast.info('Please sign the transaction');
+          }
+        }
       );
-      
-      toast.success('Credential revoked successfully');
-    } catch (error) {
-      toast.error('Failed to revoke credential');
+
+      if (result.success) {
+        console.log('✅ Credential revoked successfully');
+        
+        // Update local state
+        setCredentials(prev =>
+          prev.map(cred =>
+            cred.id === credentialId ? { ...cred, status: 'revoked' as const } : cred
+          )
+        );
+        
+        toast.success('Credential revoked successfully');
+      } else {
+        throw new Error(result.error || 'Transaction failed');
+      }
+    } catch (error: any) {
+      console.error('❌ Failed to revoke credential:', error);
+      toast.error('Failed to revoke credential', {
+        description: error.message || 'Please try again',
+      });
+    } finally {
+      setRevoking(null);
     }
   };
+
+  // Helper function to parse metadata
+  function parseMetadata(metadata?: string): Record<string, any> {
+    if (!metadata) return {};
+    try {
+      return JSON.parse(metadata);
+    } catch {
+      return { text: metadata };
+    }
+  }
 
   const filteredCredentials = credentials.filter(cred => {
     const matchesSearch = !searchQuery || 
       cred.degreeName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       cred.holderName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      cred.holder.toLowerCase().includes(searchQuery.toLowerCase());
+      cred.holder.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      cred.fieldOfStudy?.toLowerCase().includes(searchQuery.toLowerCase());
     
     const matchesStatus = filterStatus === 'all' || cred.status === filterStatus;
     
@@ -121,8 +198,26 @@ export default function IssuedCredentials() {
     revoked: credentials.filter(c => c.status === 'revoked').length,
   };
 
+  // Not an institution - redirect
   if (!isInstitution) {
     return null;
+  }
+
+  // Blockchain not ready
+  if (!isReady) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Card className="max-w-md">
+          <CardContent className="py-12 text-center">
+            <Loader2 className="h-8 w-8 animate-spin mx-auto mb-3 text-primary" />
+            <p className="text-muted-foreground">Connecting to blockchain...</p>
+            <p className="text-xs text-muted-foreground mt-2">
+              Make sure your local node is running
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
 
   return (
@@ -138,10 +233,36 @@ export default function IssuedCredentials() {
             Manage credentials issued by your institution
           </p>
         </div>
-        <Button onClick={() => navigate('/institution/issue')}>
-          <Plus className="h-4 w-4 mr-2" />
-          Issue Credential
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={handleRefresh}
+            disabled={refreshing || loading}
+          >
+            <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+          <Button onClick={() => navigate('/institution/issue')}>
+            <Plus className="h-4 w-4 mr-2" />
+            Issue Credential
+          </Button>
+        </div>
+      </div>
+
+      {/* Connection Status */}
+      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+        <div className="flex items-start space-x-3">
+          <FileText className="h-5 w-5 text-blue-600 dark:text-blue-500 flex-shrink-0 mt-0.5" />
+          <div className="text-sm flex-1">
+            <p className="font-semibold text-blue-800 dark:text-blue-400">
+              Connected to Blockchain
+            </p>
+            <p className="text-blue-700 dark:text-blue-300 mt-1">
+              All credentials are fetched directly from the blockchain. 
+              Your DID: <code className="text-xs font-mono">{didAddress?.slice(0, 10)}...{didAddress?.slice(-8)}</code>
+            </p>
+          </div>
+        </div>
       </div>
 
       {/* Stats */}
@@ -214,7 +335,7 @@ export default function IssuedCredentials() {
         <Card>
           <CardContent className="py-12 text-center">
             <Loader2 className="h-8 w-8 animate-spin mx-auto mb-3 text-primary" />
-            <p className="text-muted-foreground">Loading credentials...</p>
+            <p className="text-muted-foreground">Loading credentials from blockchain...</p>
           </CardContent>
         </Card>
       ) : filteredCredentials.length === 0 ? (
@@ -261,11 +382,17 @@ export default function IssuedCredentials() {
                       <Badge variant="outline">{credential.credentialType}</Badge>
                     </div>
                     
+                    {credential.fieldOfStudy && (
+                      <p className="text-sm text-muted-foreground mb-2">
+                        {credential.fieldOfStudy}
+                      </p>
+                    )}
+                    
                     <div className="space-y-1 text-sm">
                       <div className="flex items-center text-muted-foreground">
                         <User className="h-3 w-3 mr-2" />
                         <span>
-                          {credential.holderName || 'Unknown'} 
+                          {credential.holderName || 'Holder'} 
                           <code className="ml-2 text-xs">
                             {credential.holder.slice(0, 8)}...{credential.holder.slice(-6)}
                           </code>
@@ -282,7 +409,11 @@ export default function IssuedCredentials() {
                   </div>
 
                   <div className="flex flex-col sm:flex-row gap-2 ml-4">
-                    <Button variant="outline" size="sm">
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => window.open(`/verify?hash=${credential.credentialHash}`, '_blank')}
+                    >
                       <Eye className="h-3 w-3 mr-1" />
                       View
                     </Button>
@@ -292,10 +423,20 @@ export default function IssuedCredentials() {
                         variant="outline"
                         size="sm"
                         onClick={() => handleRevoke(credential.id)}
+                        disabled={revoking === credential.id}
                         className="text-red-600 hover:text-red-700"
                       >
-                        <XCircle className="h-3 w-3 mr-1" />
-                        Revoke
+                        {revoking === credential.id ? (
+                          <>
+                            <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                            Revoking...
+                          </>
+                        ) : (
+                          <>
+                            <XCircle className="h-3 w-3 mr-1" />
+                            Revoke
+                          </>
+                        )}
                       </Button>
                     )}
                   </div>
