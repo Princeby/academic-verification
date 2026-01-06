@@ -23,6 +23,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../ui
 import { Badge } from '../ui/Badge';
 import { toast } from 'sonner';
 import { useBlockchain } from '@/hooks/blockchain/useBlockchain';
+import { hexToString } from '@polkadot/util';
 
 interface VerificationResult {
   found: boolean;
@@ -67,12 +68,36 @@ export default function VerifyCredential({ initialHash }: VerifyCredentialProps 
     }
   }, [initialHash, isReady]);
 
+  // Helper to decode hex strings
+  const decodeHexString = (hexString: string | any): string => {
+    try {
+      // If it's not a string or doesn't start with 0x, return as-is
+      if (typeof hexString !== 'string' || !hexString.startsWith('0x')) {
+        return String(hexString);
+      }
+      
+      // Decode the hex string
+      const decoded = hexToString(hexString);
+      // Remove any null bytes
+      return decoded.replace(/\0/g, '');
+    } catch (error) {
+      console.error('Error decoding hex string:', error);
+      return String(hexString);
+    }
+  };
+
   // Helper to parse metadata
   const parseMetadata = (metadata?: string): Record<string, any> => {
     if (!metadata) return {};
+    
     try {
-      return JSON.parse(metadata);
+      // First decode if it's hex
+      const decodedMetadata = decodeHexString(metadata);
+      
+      // Then parse as JSON
+      return JSON.parse(decodedMetadata);
     } catch {
+      // If parsing fails, return as text
       return { text: metadata };
     }
   };
@@ -88,7 +113,6 @@ export default function VerifyCredential({ initialHash }: VerifyCredentialProps 
       toast.error('Blockchain not connected');
       return;
     }
-
 
     setIsVerifying(true);
     setVerificationResult(null);
@@ -109,18 +133,22 @@ export default function VerifyCredential({ initialHash }: VerifyCredentialProps 
 
       console.log('✅ Found credential on blockchain:', credential);
 
-      // Fetch institution name for the issuer
+      // Fetch institution name for the issuer and decode it
       let issuerName: string | undefined;
       try {
         const institution = await queries.did.getInstitution(credential.issuer);
-        issuerName = institution?.name;
-        console.log('✅ Found issuer institution:', issuerName);
+        if (institution?.name) {
+          // Decode the institution name if it's hex
+          issuerName = decodeHexString(institution.name);
+          console.log('✅ Found issuer institution:', issuerName);
+        }
       } catch (error) {
         console.warn('Could not fetch institution name:', error);
       }
 
-      // Parse metadata for additional details
+      // Parse metadata for additional details (will auto-decode hex)
       const metadata = parseMetadata(credential.metadata);
+      console.log('✅ Parsed metadata:', metadata);
 
       // Create verification result
       const result: VerificationResult = {
@@ -388,7 +416,7 @@ export default function VerifyCredential({ initialHash }: VerifyCredentialProps 
                       Remove
                     </button>
                   </div>
-              )}
+                )}
               </div>
             </div>
           )}
@@ -489,7 +517,7 @@ export default function VerifyCredential({ initialHash }: VerifyCredentialProps 
                           Issued By
                         </label>
                         <p className="font-medium">
-                          {verificationResult.credential.issuerName || 'Unknown Institution'}
+                          {verificationResult.credential.issuerName || 'Institution'}
                         </p>
                         <code className="text-xs font-mono text-muted-foreground block mt-1 truncate">
                           {verificationResult.credential.issuer}
@@ -538,7 +566,37 @@ export default function VerifyCredential({ initialHash }: VerifyCredentialProps 
                         <label className="text-sm font-semibold text-muted-foreground mb-2 block">
                           Additional Information
                         </label>
-                        <p className="text-sm">{verificationResult.credential.metadata}</p>
+                        <div className="text-sm bg-muted p-3 rounded">
+                          {(() => {
+                            try {
+                              const decoded = decodeHexString(verificationResult.credential.metadata);
+                              const parsed = JSON.parse(decoded);
+                              return (
+                                <div className="space-y-2">
+                                  {Object.entries(parsed).map(([key, value]) => {
+                                    // Skip empty values
+                                    if (!value || value === '') return null;
+                                    
+                                    // Format key name
+                                    const formattedKey = key
+                                      .replace(/([A-Z])/g, ' $1')
+                                      .replace(/^./, str => str.toUpperCase());
+                                    
+                                    return (
+                                      <div key={key} className="flex justify-between">
+                                        <span className="text-muted-foreground">{formattedKey}:</span>
+                                        <span className="font-medium">{String(value)}</span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              );
+                            } catch {
+                              // If parsing fails, show as plain text
+                              return <p>{decodeHexString(verificationResult.credential.metadata)}</p>;
+                            }
+                          })()}
+                        </div>
                       </div>
                     )}
 

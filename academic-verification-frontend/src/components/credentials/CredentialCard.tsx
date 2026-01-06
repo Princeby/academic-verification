@@ -1,4 +1,4 @@
-// src/components/credentials/CredentialCard.tsx
+// src/components/credentials/CredentialCard.tsx - FIXED WITH HEX DECODING
 import { useState } from 'react';
 import { 
   Award, 
@@ -17,6 +17,7 @@ import { Card, CardHeader, CardContent } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
 import { cn } from '@/lib/utils/cn';
+import { hexToString } from '@polkadot/util';
 
 export interface Credential {
   id: string;
@@ -49,6 +50,20 @@ export default function CredentialCard({
   onDownload 
 }: CredentialCardProps) {
   const [isHovered, setIsHovered] = useState(false);
+
+  // Helper to decode hex strings
+  const decodeHexString = (hexString: string | any): string => {
+    try {
+      if (typeof hexString !== 'string' || !hexString.startsWith('0x')) {
+        return String(hexString);
+      }
+      const decoded = hexToString(hexString);
+      return decoded.replace(/\0/g, '');
+    } catch (error) {
+      console.error('Error decoding hex string:', error);
+      return String(hexString);
+    }
+  };
 
   // Determine credential status
   const getStatus = () => {
@@ -103,6 +118,11 @@ export default function CredentialCard({
     return colors[type] || 'bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-400';
   };
 
+  // Decode issuer name if it's hex
+  const displayIssuerName = credential.issuerName 
+    ? decodeHexString(credential.issuerName)
+    : `${credential.issuer.slice(0, 8)}...${credential.issuer.slice(-6)}`;
+
   return (
     <Card 
       className={cn(
@@ -150,7 +170,7 @@ export default function CredentialCard({
           <Building2 className="h-4 w-4 text-muted-foreground flex-shrink-0" />
           <span className="text-muted-foreground">Issued by:</span>
           <span className="font-medium truncate">
-            {credential.issuerName || `${credential.issuer.slice(0, 8)}...${credential.issuer.slice(-6)}`}
+            {displayIssuerName}
           </span>
         </div>
 

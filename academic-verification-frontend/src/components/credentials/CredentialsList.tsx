@@ -1,4 +1,4 @@
-// src/components/credentials/CredentialsList.tsx
+// src/components/credentials/CredentialsList.tsx - FIXED WITH HEX DECODING
 import { useState, useMemo } from 'react';
 import { 
   Grid3x3, 
@@ -15,6 +15,7 @@ import { Badge } from '../ui/Badge';
 import CredentialCard, { Credential } from './CredentialCard';
 import CredentialDetailModal from './CredentialDetailModal';
 import { CREDENTIAL_TYPES, CREDENTIAL_STATUS } from '@/lib/utils/constants';
+import { hexToString } from '@polkadot/util';
 
 interface CredentialsListProps {
   credentials: Credential[];
@@ -39,9 +40,32 @@ export default function CredentialsList({
   const [selectedCredential, setSelectedCredential] = useState<Credential | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
 
+  // Helper to decode hex strings
+  const decodeHexString = (hexString: string | any): string => {
+    try {
+      if (typeof hexString !== 'string' || !hexString.startsWith('0x')) {
+        return String(hexString);
+      }
+      const decoded = hexToString(hexString);
+      return decoded.replace(/\0/g, '');
+    } catch (error) {
+      return String(hexString);
+    }
+  };
+
+  // Decode credentials before filtering/sorting
+  const decodedCredentials = useMemo(() => {
+    return credentials.map(cred => ({
+      ...cred,
+      issuerName: cred.issuerName ? decodeHexString(cred.issuerName) : cred.issuerName,
+      degreeName: cred.degreeName ? decodeHexString(cred.degreeName) : cred.degreeName,
+      fieldOfStudy: cred.fieldOfStudy ? decodeHexString(cred.fieldOfStudy) : cred.fieldOfStudy,
+    }));
+  }, [credentials]);
+
   // Filter and sort credentials
   const filteredCredentials = useMemo(() => {
-    let result = [...credentials];
+    let result = [...decodedCredentials];
 
     // Search filter
     if (searchQuery) {
@@ -91,17 +115,17 @@ export default function CredentialsList({
     });
 
     return result;
-  }, [credentials, searchQuery, filterStatus, filterType, sortBy]);
+  }, [decodedCredentials, searchQuery, filterStatus, filterType, sortBy]);
 
   // Get credential counts by status
   const counts = useMemo(() => {
     return {
-      total: credentials.length,
-      active: credentials.filter(c => !c.revoked && (!c.expiresAt || c.expiresAt > Date.now())).length,
-      revoked: credentials.filter(c => c.revoked).length,
-      expired: credentials.filter(c => !c.revoked && c.expiresAt && c.expiresAt < Date.now()).length,
+      total: decodedCredentials.length,
+      active: decodedCredentials.filter(c => !c.revoked && (!c.expiresAt || c.expiresAt > Date.now())).length,
+      revoked: decodedCredentials.filter(c => c.revoked).length,
+      expired: decodedCredentials.filter(c => !c.revoked && c.expiresAt && c.expiresAt < Date.now()).length,
     };
-  }, [credentials]);
+  }, [decodedCredentials]);
 
   // Handle credential actions
   const handleViewDetails = (credential: Credential) => {
@@ -116,7 +140,6 @@ export default function CredentialsList({
   const handleShare = (credential: Credential) => {
     const shareUrl = `${window.location.origin}/verify?hash=${credential.credentialHash}`;
     navigator.clipboard.writeText(shareUrl);
-    // Would show toast in real implementation
     alert('Share link copied to clipboard!');
   };
 
@@ -268,7 +291,7 @@ export default function CredentialsList({
 
       {/* Results Count */}
       <div className="text-sm text-muted-foreground">
-        Showing {filteredCredentials.length} of {credentials.length} credential{credentials.length !== 1 ? 's' : ''}
+        Showing {filteredCredentials.length} of {decodedCredentials.length} credential{decodedCredentials.length !== 1 ? 's' : ''}
       </div>
 
       {/* Credentials Grid/List */}

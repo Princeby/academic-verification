@@ -1,4 +1,4 @@
-// src/pages/Credentials.tsx - UPDATED WITH REAL DATA
+// src/pages/Credentials.tsx - UPDATED WITH HEX DECODING
 import { useEffect, useState } from 'react';
 import { useWalletStore } from '@/store/wallet.store';
 import { useDIDStore } from '@/store/did.store';
@@ -11,6 +11,7 @@ import { AlertCircle, Award, RefreshCw, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import type { Credential } from '@/components/credentials/CredentialCard';
+import { hexToString } from '@polkadot/util';
 
 export default function Credentials() {
   const navigate = useNavigate();
@@ -21,6 +22,19 @@ export default function Credentials() {
   const [fetchError, setFetchError] = useState<string | null>(null);
   
   const { queries, isReady } = useBlockchain();
+
+  // Helper to decode hex strings
+  const decodeHexString = (hexString: string | any): string => {
+    try {
+      if (typeof hexString !== 'string' || !hexString.startsWith('0x')) {
+        return String(hexString);
+      }
+      const decoded = hexToString(hexString);
+      return decoded.replace(/\0/g, '');
+    } catch (error) {
+      return String(hexString);
+    }
+  };
 
   // Fetch credentials when component mounts
   useEffect(() => {
@@ -53,16 +67,24 @@ export default function Credentials() {
         return;
       }
 
-      // Fetch institution names for issuers
+      // Fetch institution names for issuers AND decode all hex strings
       const credentialsWithInstitutionNames = await Promise.all(
         blockchainCredentials.map(async (cred) => {
           try {
             const institution = await queries.did.getInstitution(cred.issuer);
+            
+            // Decode institution name if it exists
+            const issuerName = institution?.name 
+              ? decodeHexString(institution.name)
+              : undefined;
+            
             return {
               ...cred,
-              issuerName: institution?.name || undefined,
+              issuerName,
               degreeName: extractDegreeName(cred.metadata),
               fieldOfStudy: extractFieldOfStudy(cred.metadata),
+              // Keep original metadata for modal display
+              metadata: cred.metadata,
             } as Credential;
           } catch (error) {
             console.error('Error fetching institution for issuer:', cred.issuer, error);
@@ -70,6 +92,7 @@ export default function Credentials() {
               ...cred,
               degreeName: extractDegreeName(cred.metadata),
               fieldOfStudy: extractFieldOfStudy(cred.metadata),
+              metadata: cred.metadata,
             } as Credential;
           }
         })
@@ -99,13 +122,17 @@ export default function Credentials() {
     toast.success('Credentials refreshed');
   };
 
-  // Helper functions to extract data from metadata
+  // Helper functions to extract data from metadata (with hex decoding)
   function extractDegreeName(metadata?: string): string | undefined {
     if (!metadata) return undefined;
     try {
-      const parsed = JSON.parse(metadata);
+      // First decode the hex
+      const decoded = decodeHexString(metadata);
+      // Then parse JSON
+      const parsed = JSON.parse(decoded);
       return parsed.degreeName || parsed.name || undefined;
     } catch {
+      // If it's not hex or not JSON, return as-is
       return metadata;
     }
   }
@@ -113,7 +140,10 @@ export default function Credentials() {
   function extractFieldOfStudy(metadata?: string): string | undefined {
     if (!metadata) return undefined;
     try {
-      const parsed = JSON.parse(metadata);
+      // First decode the hex
+      const decoded = decodeHexString(metadata);
+      // Then parse JSON
+      const parsed = JSON.parse(decoded);
       return parsed.fieldOfStudy || parsed.field || undefined;
     } catch {
       return undefined;
