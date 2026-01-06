@@ -8937,7 +8937,7 @@ export default function Dashboard() {
                 </div>
               </div>
               <Button asChild>
-                <Link to="/institution">
+                <Link to="/institution/register">
                   Register Now
                 </Link>
               </Button>
@@ -9928,9 +9928,13 @@ import {
   XCircle,
   Calendar,
   User,
-  Loader2
+  Loader2,
+  RefreshCw,
+  AlertCircle
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useBlockchain } from '@/hooks/blockchain/useBlockchain';
+import { formatCredentialType } from '@/lib/blockchain/integration';
 
 interface IssuedCredential {
   id: string;
@@ -9938,62 +9942,95 @@ interface IssuedCredential {
   holderName?: string;
   credentialType: string;
   degreeName: string;
+  fieldOfStudy?: string;
   issuedAt: number;
   status: 'active' | 'revoked';
+  credentialHash: string;
 }
 
 export default function IssuedCredentials() {
   const navigate = useNavigate();
   const { isInstitution, didAddress } = useDIDStore();
+  const { queries, isReady, transactions, account } = useBlockchain();
+  
   const [credentials, setCredentials] = useState<IssuedCredential[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'revoked'>('all');
+  const [refreshing, setRefreshing] = useState(false);
+  const [revoking, setRevoking] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isInstitution) {
       navigate('/institution');
       return;
     }
-    fetchIssuedCredentials();
-  }, [isInstitution]);
+
+    if (isReady && queries && didAddress) {
+      fetchIssuedCredentials();
+    }
+  }, [isInstitution, isReady, queries, didAddress]);
 
   const fetchIssuedCredentials = async () => {
+    if (!queries || !didAddress) {
+      console.log('Missing queries or didAddress');
+      return;
+    }
+
     setLoading(true);
     try {
-      // TODO: Replace with actual blockchain query
-      // Query credentials where issuer = didAddress
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      console.log('📡 Fetching issued credentials for institution:', didAddress);
       
-      // Mock data
-      const mockCredentials: IssuedCredential[] = [
-        {
-          id: 'cred_1',
-          holder: '5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY',
-          holderName: 'John Doe',
-          credentialType: "Bachelor's Degree",
-          degreeName: 'B.S. in Computer Science',
-          issuedAt: Date.now() - 30 * 24 * 60 * 60 * 1000,
-          status: 'active',
-        },
-        {
-          id: 'cred_2',
-          holder: '5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty',
-          holderName: 'Jane Smith',
-          credentialType: "Master's Degree",
-          degreeName: 'M.S. in Data Science',
-          issuedAt: Date.now() - 60 * 24 * 60 * 60 * 1000,
-          status: 'active',
-        },
-      ];
+      // Fetch credentials issued by this institution from blockchain
+      const blockchainCredentials = await queries.credential.getCredentialsByIssuer(didAddress);
       
-      setCredentials(mockCredentials);
-    } catch (error) {
-      console.error('Failed to fetch issued credentials:', error);
-      toast.error('Failed to load credentials');
+      console.log('✅ Fetched issued credentials:', blockchainCredentials);
+      
+      if (blockchainCredentials.length === 0) {
+        console.log('ℹ️ No credentials issued yet');
+        setCredentials([]);
+        setLoading(false);
+        return;
+      }
+
+      // Process credentials and format for display
+      const processedCredentials: IssuedCredential[] = blockchainCredentials.map((cred) => {
+        const metadata = parseMetadata(cred.metadata);
+        
+        return {
+          id: cred.id,
+          holder: cred.holder,
+          holderName: undefined, // We'll fetch this if needed
+          credentialType: formatCredentialType(cred.credentialType),
+          degreeName: metadata.degreeName || 'Academic Credential',
+          fieldOfStudy: metadata.fieldOfStudy,
+          issuedAt: cred.issuedAt,
+          status: cred.revoked ? 'revoked' : 'active',
+          credentialHash: cred.credentialHash,
+        } as IssuedCredential;
+      });
+
+      console.log('✅ Processed credentials:', processedCredentials);
+      setCredentials(processedCredentials);
+      
+      if (processedCredentials.length > 0) {
+        toast.success(`Found ${processedCredentials.length} issued credential(s)`);
+      }
+    } catch (error: any) {
+      console.error('❌ Failed to fetch issued credentials:', error);
+      toast.error('Failed to load credentials', {
+        description: error.message || 'Check console for details',
+      });
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await fetchIssuedCredentials();
+    setRefreshing(false);
+    toast.success('Credentials refreshed');
   };
 
   const handleRevoke = async (credentialId: string) => {
@@ -10001,27 +10038,67 @@ export default function IssuedCredentials() {
       return;
     }
 
+    if (!transactions || !account) {
+      toast.error('Wallet not connected');
+      return;
+    }
+
+    setRevoking(credentialId);
+
     try {
-      // TODO: Call blockchain revoke_credential extrinsic
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      console.log('🔄 Revoking credential:', credentialId);
       
-      setCredentials(prev =>
-        prev.map(cred =>
-          cred.id === credentialId ? { ...cred, status: 'revoked' as const } : cred
-        )
+      const result = await transactions.credential.revokeCredential(
+        account,
+        credentialId,
+        (status) => {
+          console.log('Transaction status:', status);
+          if (status.status === 'signing') {
+            toast.info('Please sign the transaction');
+          }
+        }
       );
-      
-      toast.success('Credential revoked successfully');
-    } catch (error) {
-      toast.error('Failed to revoke credential');
+
+      if (result.success) {
+        console.log('✅ Credential revoked successfully');
+        
+        // Update local state
+        setCredentials(prev =>
+          prev.map(cred =>
+            cred.id === credentialId ? { ...cred, status: 'revoked' as const } : cred
+          )
+        );
+        
+        toast.success('Credential revoked successfully');
+      } else {
+        throw new Error(result.error || 'Transaction failed');
+      }
+    } catch (error: any) {
+      console.error('❌ Failed to revoke credential:', error);
+      toast.error('Failed to revoke credential', {
+        description: error.message || 'Please try again',
+      });
+    } finally {
+      setRevoking(null);
     }
   };
+
+  // Helper function to parse metadata
+  function parseMetadata(metadata?: string): Record<string, any> {
+    if (!metadata) return {};
+    try {
+      return JSON.parse(metadata);
+    } catch {
+      return { text: metadata };
+    }
+  }
 
   const filteredCredentials = credentials.filter(cred => {
     const matchesSearch = !searchQuery || 
       cred.degreeName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       cred.holderName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      cred.holder.toLowerCase().includes(searchQuery.toLowerCase());
+      cred.holder.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      cred.fieldOfStudy?.toLowerCase().includes(searchQuery.toLowerCase());
     
     const matchesStatus = filterStatus === 'all' || cred.status === filterStatus;
     
@@ -10034,8 +10111,26 @@ export default function IssuedCredentials() {
     revoked: credentials.filter(c => c.status === 'revoked').length,
   };
 
+  // Not an institution - redirect
   if (!isInstitution) {
     return null;
+  }
+
+  // Blockchain not ready
+  if (!isReady) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Card className="max-w-md">
+          <CardContent className="py-12 text-center">
+            <Loader2 className="h-8 w-8 animate-spin mx-auto mb-3 text-primary" />
+            <p className="text-muted-foreground">Connecting to blockchain...</p>
+            <p className="text-xs text-muted-foreground mt-2">
+              Make sure your local node is running
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
 
   return (
@@ -10051,10 +10146,36 @@ export default function IssuedCredentials() {
             Manage credentials issued by your institution
           </p>
         </div>
-        <Button onClick={() => navigate('/institution/issue')}>
-          <Plus className="h-4 w-4 mr-2" />
-          Issue Credential
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={handleRefresh}
+            disabled={refreshing || loading}
+          >
+            <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+          <Button onClick={() => navigate('/institution/issue')}>
+            <Plus className="h-4 w-4 mr-2" />
+            Issue Credential
+          </Button>
+        </div>
+      </div>
+
+      {/* Connection Status */}
+      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+        <div className="flex items-start space-x-3">
+          <FileText className="h-5 w-5 text-blue-600 dark:text-blue-500 flex-shrink-0 mt-0.5" />
+          <div className="text-sm flex-1">
+            <p className="font-semibold text-blue-800 dark:text-blue-400">
+              Connected to Blockchain
+            </p>
+            <p className="text-blue-700 dark:text-blue-300 mt-1">
+              All credentials are fetched directly from the blockchain. 
+              Your DID: <code className="text-xs font-mono">{didAddress?.slice(0, 10)}...{didAddress?.slice(-8)}</code>
+            </p>
+          </div>
+        </div>
       </div>
 
       {/* Stats */}
@@ -10127,7 +10248,7 @@ export default function IssuedCredentials() {
         <Card>
           <CardContent className="py-12 text-center">
             <Loader2 className="h-8 w-8 animate-spin mx-auto mb-3 text-primary" />
-            <p className="text-muted-foreground">Loading credentials...</p>
+            <p className="text-muted-foreground">Loading credentials from blockchain...</p>
           </CardContent>
         </Card>
       ) : filteredCredentials.length === 0 ? (
@@ -10174,11 +10295,17 @@ export default function IssuedCredentials() {
                       <Badge variant="outline">{credential.credentialType}</Badge>
                     </div>
                     
+                    {credential.fieldOfStudy && (
+                      <p className="text-sm text-muted-foreground mb-2">
+                        {credential.fieldOfStudy}
+                      </p>
+                    )}
+                    
                     <div className="space-y-1 text-sm">
                       <div className="flex items-center text-muted-foreground">
                         <User className="h-3 w-3 mr-2" />
                         <span>
-                          {credential.holderName || 'Unknown'} 
+                          {credential.holderName || 'Holder'} 
                           <code className="ml-2 text-xs">
                             {credential.holder.slice(0, 8)}...{credential.holder.slice(-6)}
                           </code>
@@ -10195,7 +10322,11 @@ export default function IssuedCredentials() {
                   </div>
 
                   <div className="flex flex-col sm:flex-row gap-2 ml-4">
-                    <Button variant="outline" size="sm">
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => window.open(`/verify?hash=${credential.credentialHash}`, '_blank')}
+                    >
                       <Eye className="h-3 w-3 mr-1" />
                       View
                     </Button>
@@ -10205,10 +10336,20 @@ export default function IssuedCredentials() {
                         variant="outline"
                         size="sm"
                         onClick={() => handleRevoke(credential.id)}
+                        disabled={revoking === credential.id}
                         className="text-red-600 hover:text-red-700"
                       >
-                        <XCircle className="h-3 w-3 mr-1" />
-                        Revoke
+                        {revoking === credential.id ? (
+                          <>
+                            <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                            Revoking...
+                          </>
+                        ) : (
+                          <>
+                            <XCircle className="h-3 w-3 mr-1" />
+                            Revoke
+                          </>
+                        )}
                       </Button>
                     )}
                   </div>
@@ -10224,18 +10365,19 @@ export default function IssuedCredentials() {
 </file>
 
 <file path="src/pages/MyRequests.tsx">
-// src/pages/MyRequests.tsx
+// src/pages/MyRequests.tsx - FIXED WITH REAL BLOCKCHAIN DATA
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, FileText, RefreshCw } from 'lucide-react';
+import { Plus, FileText, RefreshCw, Loader2, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
-import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
 import { Modal } from '@/components/ui/Modal';
 import RequestsList from '@/components/requests/RequestsList';
 import CreateRequestForm from '@/components/requests/CreateRequestForm';
 import { useWalletStore } from '@/store/wallet.store';
 import { useDIDStore } from '@/store/did.store';
 import { useCredentialRequestsStore } from '@/store/credentialRequests.store';
+import { useBlockchain } from '@/hooks/blockchain/useBlockchain';
 import type { CredentialRequest } from '@/types/credentialRequest.types';
 import { toast } from 'sonner';
 
@@ -10243,6 +10385,7 @@ export default function MyRequests() {
   const navigate = useNavigate();
   const { isConnected } = useWalletStore();
   const { hasDID, didAddress } = useDIDStore();
+  const { queries, isReady } = useBlockchain();
   const { 
     myRequests, 
     setMyRequests, 
@@ -10254,63 +10397,169 @@ export default function MyRequests() {
   const [selectedRequest, setSelectedRequest] = useState<CredentialRequest | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (isConnected && hasDID && didAddress) {
+    if (isConnected && hasDID && didAddress && isReady && queries) {
       fetchMyRequests();
     }
-  }, [isConnected, hasDID, didAddress]);
+  }, [isConnected, hasDID, didAddress, isReady, queries]);
 
   const fetchMyRequests = async () => {
+    if (!queries || !didAddress) {
+      console.log('⚠️ Missing queries or didAddress');
+      return;
+    }
+
     setLoading(true);
+    setFetchError(null);
+
     try {
-      // TODO: Query blockchain for requests where requester = didAddress
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      console.log('📡 Fetching credential requests for:', didAddress);
+      
+      // Note: Since your pallets don't have a credential request system yet,
+      // we'll need to add this functionality to your runtime
+      // For now, this will return empty array until you add the request pallet
+      
+      // TODO: Add a credential request pallet to your runtime with:
+      // - RequestsByRequester storage map
+      // - Request struct with status, dates, etc.
+      
+      // Placeholder: Check if your API has the credential request query
+      const api = queries.api;
+      
+      if (!api) {
+        throw new Error('API not available');
+      }
 
-      // Mock data
-      const mockRequests: CredentialRequest[] = [
-        {
-          id: 'req_1',
-          requestId: 1,
-          requester: didAddress!,
-          institution: '5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY',
-          institutionName: 'Massachusetts Institute of Technology',
-          credentialType: "Bachelor's Degree",
-          programName: 'Bachelor of Science in Computer Science',
-          fieldOfStudy: 'Computer Science',
-          startDate: '2020-09-01',
-          endDate: '2024-05-15',
-          major: 'Software Engineering',
-          expectedGPA: '3.85',
-          status: 'pending',
-          createdAt: Date.now() - 7 * 24 * 60 * 60 * 1000,
-          updatedAt: Date.now() - 7 * 24 * 60 * 60 * 1000,
-        },
-        {
-          id: 'req_2',
-          requestId: 2,
-          requester: didAddress!,
-          institution: '5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty',
-          institutionName: 'Stanford University',
-          credentialType: 'Certificate',
-          programName: 'Machine Learning Specialization',
-          fieldOfStudy: 'Artificial Intelligence',
-          startDate: '2024-01-01',
-          endDate: '2024-03-30',
-          status: 'approved',
-          createdAt: Date.now() - 30 * 24 * 60 * 60 * 1000,
-          updatedAt: Date.now() - 5 * 24 * 60 * 60 * 1000,
-          reviewedAt: Date.now() - 5 * 24 * 60 * 60 * 1000,
-        },
-      ];
+      // Check if credential request pallet exists
+      // @ts-ignore - Dynamic pallet check
+      if (!api.query.credentialRequest) {
+        console.warn('⚠️ Credential request pallet not found in runtime');
+        toast.info('Credential request feature not yet deployed', {
+          description: 'This feature requires the request pallet to be added to the runtime',
+        });
+        setMyRequests([]);
+        setLoading(false);
+        return;
+      }
 
-      setMyRequests(mockRequests);
-    } catch (error) {
-      console.error('Failed to fetch requests:', error);
-      toast.error('Failed to load requests');
+      // If pallet exists, query requests
+      // @ts-ignore - Dynamic pallet query
+      const requestsData = await api.query.credentialRequest.requestsByRequester(didAddress);
+      
+      if (requestsData.isEmpty) {
+        console.log('ℹ️ No requests found for this user');
+        setMyRequests([]);
+        setLoading(false);
+        return;
+      }
+
+      const requestsList = requestsData.toJSON() as any[];
+      console.log('✅ Found requests:', requestsList);
+
+      // Fetch institution names for each request
+      const requestsWithDetails = await Promise.all(
+        requestsList.map(async (req) => {
+          try {
+            const institution = await queries.did.getInstitution(req.institution);
+            
+            return {
+              id: req.requestId.toString(),
+              requestId: req.requestId,
+              requester: req.requester,
+              institution: req.institution,
+              institutionName: institution?.name,
+              credentialType: formatCredentialType(req.credentialType),
+              programName: req.programName,
+              fieldOfStudy: req.fieldOfStudy,
+              startDate: req.startDate,
+              endDate: req.endDate,
+              major: req.major,
+              minor: req.minor,
+              expectedGPA: req.expectedGPA,
+              studentId: req.studentId,
+              expectedGraduationDate: req.expectedGraduationDate,
+              additionalNotes: req.additionalNotes,
+              supportingDocuments: req.supportingDocuments,
+              status: mapRequestStatus(req.status),
+              createdAt: req.createdAt,
+              updatedAt: req.updatedAt,
+              reviewedAt: req.reviewedAt,
+              rejectionReason: req.rejectionReason,
+            } as CredentialRequest;
+          } catch (error) {
+            console.error('Error processing request:', error);
+            return null;
+          }
+        })
+      );
+
+      const validRequests = requestsWithDetails.filter(r => r !== null) as CredentialRequest[];
+      console.log('✅ Processed requests:', validRequests);
+      
+      setMyRequests(validRequests);
+      
+      if (validRequests.length > 0) {
+        toast.success(`Found ${validRequests.length} request(s)`);
+      }
+    } catch (error: any) {
+      console.error('❌ Failed to fetch requests:', error);
+      setFetchError(error.message || 'Failed to fetch requests');
+      
+      // Show helpful error message
+      if (error.message?.includes('credentialRequest')) {
+        toast.info('Feature coming soon', {
+          description: 'Credential requests will be available once the request pallet is deployed',
+        });
+      } else {
+        toast.error('Failed to load requests', {
+          description: 'Check console for details',
+        });
+      }
+      
+      setMyRequests([]);
     } finally {
       setLoading(false);
     }
+  };
+
+  // Helper to format credential type from blockchain enum
+  const formatCredentialType = (type: any): string => {
+    const typeMap: Record<string, string> = {
+      Degree: "Bachelor's Degree",
+      MastersDegree: "Master's Degree",
+      Doctorate: "Doctorate (PhD)",
+      Certificate: "Certificate",
+      Transcript: "Transcript",
+      ProfessionalCertification: "Professional Certification",
+      Other: "Other",
+    };
+
+    if (typeof type === 'string') {
+      return typeMap[type] || type;
+    }
+
+    if (typeof type === 'object') {
+      const key = Object.keys(type)[0];
+      return typeMap[key] || key;
+    }
+
+    return 'Unknown';
+  };
+
+  // Helper to map blockchain status to UI status
+  const mapRequestStatus = (status: any): CredentialRequest['status'] => {
+    if (typeof status === 'string') {
+      return status.toLowerCase() as CredentialRequest['status'];
+    }
+    
+    if (typeof status === 'object') {
+      const key = Object.keys(status)[0].toLowerCase();
+      return key as CredentialRequest['status'];
+    }
+    
+    return 'pending';
   };
 
   const handleRefresh = async () => {
@@ -10325,12 +10574,23 @@ export default function MyRequests() {
     setShowDetailModal(true);
   };
 
+  const handleCreateSuccess = async () => {
+    setShowCreateModal(false);
+    // Wait a moment for the transaction to finalize
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    await fetchMyRequests();
+  };
+
+  // Not connected
   if (!isConnected || !hasDID) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <Card className="max-w-md">
           <CardHeader>
-            <CardTitle>Access Required</CardTitle>
+            <div className="flex items-center space-x-2 text-yellow-600 mb-2">
+              <AlertCircle className="h-5 w-5" />
+              <CardTitle>Access Required</CardTitle>
+            </div>
             <CardDescription>
               {!isConnected 
                 ? 'Please connect your wallet to view credential requests'
@@ -10338,6 +10598,28 @@ export default function MyRequests() {
               }
             </CardDescription>
           </CardHeader>
+          <CardContent>
+            <Button onClick={() => navigate('/dashboard')} className="w-full">
+              {!isConnected ? 'Connect Wallet' : 'Create DID'}
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Blockchain not ready
+  if (!isReady) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Card className="max-w-md">
+          <CardContent className="py-12 text-center">
+            <Loader2 className="h-8 w-8 animate-spin mx-auto mb-3 text-primary" />
+            <p className="text-muted-foreground">Connecting to blockchain...</p>
+            <p className="text-xs text-muted-foreground mt-2">
+              Make sure your local node is running
+            </p>
+          </CardContent>
         </Card>
       </div>
     );
@@ -10353,14 +10635,14 @@ export default function MyRequests() {
             My Requests
           </h1>
           <p className="text-muted-foreground mt-1">
-            Track your credential requests to institutions
+            Track your credential requests to institutions (fetched from blockchain)
           </p>
         </div>
         <div className="flex gap-2">
           <Button
             variant="outline"
             onClick={handleRefresh}
-            disabled={refreshing}
+            disabled={refreshing || loading}
           >
             <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
             Refresh
@@ -10371,6 +10653,65 @@ export default function MyRequests() {
           </Button>
         </div>
       </div>
+
+      {/* Connection Status */}
+      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+        <div className="flex items-start space-x-3">
+          <FileText className="h-5 w-5 text-blue-600 dark:text-blue-500 flex-shrink-0 mt-0.5" />
+          <div className="text-sm flex-1">
+            <p className="font-semibold text-blue-800 dark:text-blue-400">
+              {isReady ? 'Connected to Blockchain' : 'Connecting...'}
+            </p>
+            <p className="text-blue-700 dark:text-blue-300 mt-1">
+              All requests are fetched directly from the blockchain. 
+              Your DID: <code className="text-xs font-mono">{didAddress?.slice(0, 10)}...{didAddress?.slice(-8)}</code>
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Feature Status Warning */}
+      {fetchError?.includes('credentialRequest') && (
+        <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
+          <div className="flex items-start space-x-3">
+            <AlertCircle className="h-5 w-5 text-yellow-600 dark:text-yellow-500 flex-shrink-0 mt-0.5" />
+            <div className="text-sm">
+              <p className="font-semibold text-yellow-800 dark:text-yellow-400">
+                Feature Coming Soon
+              </p>
+              <p className="text-yellow-700 dark:text-yellow-300 mt-1">
+                The credential request system requires adding a request pallet to your runtime. 
+                Until then, students can still receive credentials directly from institutions.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Error Message */}
+      {fetchError && !fetchError.includes('credentialRequest') && (
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+          <div className="flex items-start space-x-3">
+            <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-500 flex-shrink-0 mt-0.5" />
+            <div className="text-sm flex-1">
+              <p className="font-semibold text-red-800 dark:text-red-400">
+                Error Loading Requests
+              </p>
+              <p className="text-red-700 dark:text-red-300 mt-1">
+                {fetchError}
+              </p>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={handleRefresh}
+                className="mt-2"
+              >
+                Try Again
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Info Banner */}
       <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
@@ -10394,7 +10735,11 @@ export default function MyRequests() {
       <RequestsList
         requests={myRequests}
         loading={loading}
-        emptyMessage="You haven't submitted any requests yet"
+        emptyMessage={
+          isReady 
+            ? "You haven't submitted any requests yet. Requests will appear here once the request pallet is deployed."
+            : "Waiting for blockchain connection..."
+        }
         viewMode="student"
         onViewDetails={handleViewDetails}
       />
@@ -10406,10 +10751,7 @@ export default function MyRequests() {
         className="max-w-4xl"
       >
         <CreateRequestForm
-          onSuccess={() => {
-            setShowCreateModal(false);
-            fetchMyRequests();
-          }}
+          onSuccess={handleCreateSuccess}
           onCancel={() => setShowCreateModal(false)}
         />
       </Modal>
@@ -10423,7 +10765,6 @@ export default function MyRequests() {
         {selectedRequest && (
           <div className="p-6">
             <h2 className="text-2xl font-bold mb-4">Request Details</h2>
-            {/* Add detailed view here - similar to ReviewRequestModal but read-only */}
             <div className="space-y-4">
               <div>
                 <label className="text-sm font-semibold text-muted-foreground">Program</label>
@@ -10431,7 +10772,7 @@ export default function MyRequests() {
               </div>
               <div>
                 <label className="text-sm font-semibold text-muted-foreground">Institution</label>
-                <p>{selectedRequest.institutionName}</p>
+                <p>{selectedRequest.institutionName || selectedRequest.institution}</p>
               </div>
               <div>
                 <label className="text-sm font-semibold text-muted-foreground">Status</label>
@@ -10445,6 +10786,12 @@ export default function MyRequests() {
                   <p className="text-sm text-red-700 dark:text-red-300 mt-1">
                     {selectedRequest.rejectionReason}
                   </p>
+                </div>
+              )}
+              {selectedRequest.additionalNotes && (
+                <div>
+                  <label className="text-sm font-semibold text-muted-foreground">Your Notes</label>
+                  <p className="text-sm">{selectedRequest.additionalNotes}</p>
                 </div>
               )}
             </div>
@@ -11836,6 +12183,7 @@ import CreateDIDPage from './pages/CreateDIDPage';
 import MyRequests from './pages/MyRequests';
 import InstitutionRequests from './pages/InstitutionRequests';
 import AdminVerification from './pages/AdminVerification';
+import InstitutionRegistration from './components/did/InstitutionRegistration';
 
 // Error Boundary
 import ErrorBoundary from './components/error/ErrorBoundary';
@@ -11891,6 +12239,7 @@ function App() {
                     
                     {/* Institution Routes */}
                     <Route path="/institution" element={<Institution />} />
+                    <Route path="/institution/register" element={<InstitutionRegistration />} />
                     <Route path="/institution/issue" element={<IssueCredential />} />
                     <Route path="/institution/issued" element={<IssuedCredentials />} />
                     <Route path="/institution/requests" element={<InstitutionRequests />} />
@@ -12064,468 +12413,3 @@ dist-ssr
 *.sw?
 </file>
 
-<file path="check-files.sh">
-#!/bin/bash
-
-# Colors for output
-GREEN='\033[0;32m'
-RED='\033[0;31m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
-
-echo "🔍 Checking Required Files..."
-echo ""
-
-# Function to check if file exists
-check_file() {
-    if [ -f "$1" ]; then
-        echo -e "${GREEN}✅ $1${NC}"
-        return 0
-    else
-        echo -e "${RED}❌ $1 (MISSING)${NC}"
-        return 1
-    fi
-}
-
-missing_count=0
-
-echo "📁 Checking UI Components..."
-check_file "src/components/ui/Badge.tsx" || ((missing_count++))
-check_file "src/components/ui/Button.tsx" || ((missing_count++))
-check_file "src/components/ui/Card.tsx" || ((missing_count++))
-check_file "src/components/ui/Input.tsx" || ((missing_count++))
-check_file "src/components/ui/Modal.tsx" || ((missing_count++))
-check_file "src/components/ui/Spinner.tsx" || ((missing_count++))
-check_file "src/components/ui/index.ts" || ((missing_count++))
-
-echo ""
-echo "📁 Checking Layout Components..."
-check_file "src/components/layout/MainLayout.tsx" || ((missing_count++))
-check_file "src/components/layout/Header.tsx" || ((missing_count++))
-check_file "src/components/layout/Sidebar.tsx" || ((missing_count++))
-check_file "src/components/layout/Footer.tsx" || ((missing_count++))
-
-echo ""
-echo "📁 Checking Blockchain Components..."
-check_file "src/components/blockchain/WalletConnect.tsx" || ((missing_count++))
-check_file "src/components/blockchain/ChainStatus.tsx" || ((missing_count++))
-
-echo ""
-echo "📁 Checking DID Components..."
-check_file "src/components/did/DIDStatus.tsx" || ((missing_count++))
-
-echo ""
-echo "📁 Checking Utilities..."
-check_file "src/lib/utils/cn.ts" || ((missing_count++))
-check_file "src/lib/utils/constants.ts" || ((missing_count++))
-
-echo ""
-echo "📁 Checking Stores..."
-check_file "src/store/wallet.store.ts" || ((missing_count++))
-check_file "src/store/did.store.ts" || ((missing_count++))
-check_file "src/store/credentials.store.ts" || ((missing_count++))
-check_file "src/store/ui.store.ts" || ((missing_count++))
-
-echo ""
-echo "📁 Checking Providers..."
-check_file "src/providers/PolkadotProvider.tsx" || ((missing_count++))
-check_file "src/providers/WalletProvider.tsx" || ((missing_count++))
-
-echo ""
-echo "📁 Checking Hooks..."
-check_file "src/hooks/blockchain/usePolkadotApi.ts" || ((missing_count++))
-
-echo ""
-echo "📁 Checking Pages..."
-check_file "src/pages/Home.tsx" || ((missing_count++))
-check_file "src/pages/Dashboard.tsx" || ((missing_count++))
-check_file "src/pages/Credentials.tsx" || ((missing_count++))
-check_file "src/pages/Institution.tsx" || ((missing_count++))
-check_file "src/pages/Verify.tsx" || ((missing_count++))
-check_file "src/pages/Institutions.tsx" || ((missing_count++))
-
-echo ""
-echo "📁 Checking Main Files..."
-check_file "src/App.tsx" || ((missing_count++))
-check_file "src/main.tsx" || ((missing_count++))
-check_file "src/index.css" || ((missing_count++))
-
-echo ""
-echo "📁 Checking Config Files..."
-check_file "tsconfig.json" || ((missing_count++))
-check_file "vite.config.ts" || ((missing_count++))
-check_file "tailwind.config.js" || ((missing_count++))
-
-echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-if [ $missing_count -eq 0 ]; then
-    echo -e "${GREEN}🎉 All required files are present!${NC}"
-    echo ""
-    echo "Next steps:"
-    echo "1. Run: npm install (if you haven't already)"
-    echo "2. Run: npm run dev"
-    echo "3. Open: http://localhost:5174"
-else
-    echo -e "${RED}⚠️  Missing $missing_count file(s)${NC}"
-    echo ""
-    echo "Please create the missing files listed above."
-    echo "Refer to the artifacts provided by Claude."
-fi
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-</file>
-
-<file path="eslint.config.js">
-import js from '@eslint/js'
-import globals from 'globals'
-import reactHooks from 'eslint-plugin-react-hooks'
-import reactRefresh from 'eslint-plugin-react-refresh'
-import tseslint from 'typescript-eslint'
-
-export default tseslint.config(
-  { ignores: ['dist'] },
-  {
-    extends: [js.configs.recommended, ...tseslint.configs.recommended],
-    files: ['**/*.{ts,tsx}'],
-    languageOptions: {
-      ecmaVersion: 2020,
-      globals: globals.browser,
-    },
-    plugins: {
-      'react-hooks': reactHooks,
-      'react-refresh': reactRefresh,
-    },
-    rules: {
-      ...reactHooks.configs.recommended.rules,
-      'react-refresh/only-export-components': [
-        'warn',
-        { allowConstantExport: true },
-      ],
-    },
-  },
-)
-</file>
-
-<file path="index.html">
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>academic-verification-frontend</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
-</html>
-</file>
-
-<file path="package.json">
-{
-  "name": "academic-verification-frontend",
-  "private": true,
-  "version": "0.0.0",
-  "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
-    "lint": "eslint .",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "@hookform/resolvers": "^5.2.2",
-    "@polkadot/api": "^16.5.4",
-    "@polkadot/extension-dapp": "^0.62.6",
-    "@polkadot/keyring": "^14.0.1",
-    "@polkadot/util-crypto": "^14.0.1",
-    "@tailwindcss/vite": "^4.1.18",
-    "@tanstack/react-query": "^5.90.13",
-    "autoprefixer": "^10.4.23",
-    "class-variance-authority": "^0.7.1",
-    "clsx": "^2.1.1",
-    "lucide-react": "^0.562.0",
-    "postcss": "^8.5.6",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0",
-    "react-hook-form": "^7.69.0",
-    "react-router-dom": "^7.11.0",
-    "sonner": "^2.0.7",
-    "tailwind-merge": "^3.4.0",
-    "tailwindcss": "^4.1.18",
-    "zod": "^4.2.1",
-    "bn.js": "^5.2.1",
-    "zustand": "^5.0.9"
-  },
-  "devDependencies": {
-    "@eslint/js": "^9.39.1",
-    "@types/node": "^24.10.4",
-    "@types/react": "^19.2.5",
-    "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^5.1.1",
-    "eslint": "^9.39.1",
-    "eslint-plugin-react-hooks": "^7.0.1",
-    "eslint-plugin-react-refresh": "^0.4.24",
-    "globals": "^16.5.0",
-    "typescript": "~5.9.3",
-    "typescript-eslint": "^8.46.4",
-    "vite": "^7.2.4",
-    "vite-plugin-node-polyfills": "^0.24.0"
-  }
-}
-</file>
-
-<file path="README.md">
-# React + TypeScript + Vite
-
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
-
-Currently, two official plugins are available:
-
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
-
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
-</file>
-
-<file path="tsconfig.app.json">
-{
-  "compilerOptions": {
-    "composite": true,
-    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
-    "target": "ES2022",
-    "useDefineForClassFields": true,
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "module": "ESNext",
-    "types": ["vite/client"],
-    "skipLibCheck": true,
-
-    /* Bundler mode */
-    "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
-    "verbatimModuleSyntax": true,
-    "moduleDetection": "force",
-    "noEmit": true,
-    "jsx": "react-jsx",
-
-    /* Linting */
-    "strict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "erasableSyntaxOnly": true,
-    "noFallthroughCasesInSwitch": true,
-    "noUncheckedSideEffectImports": true
-  },
-  "include": ["src"]
-}
-</file>
-
-<file path="tsconfig.json">
-{
-  "compilerOptions": {
-    "target": "ES2020",
-    "useDefineForClassFields": true,
-    "lib": ["ES2020", "DOM", "DOM.Iterable"],
-    "module": "ESNext",
-    "skipLibCheck": true,
-    
-    /* Bundler mode */
-    "moduleResolution": "Bundler",
-    "allowImportingTsExtensions": true,
-    "isolatedModules": true,
-    "moduleDetection": "force",
-    "noEmit": true,
-    "jsx": "react-jsx",
-    
-    /* Linting */
-    "strict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true,
-    "noUncheckedSideEffectImports": true,
-    
-    /* Path Aliases */
-    "baseUrl": ".",
-    "paths": {
-      "@/*": ["./src/*"]
-    },
-    
-    /* Additional */
-    "resolveJsonModule": true,
-    "allowSyntheticDefaultImports": true,
-    "esModuleInterop": true
-  },
-  "include": ["src"]
-}
-</file>
-
-<file path="tsconfig.node.json">
-{
-  "compilerOptions": {
-    "target": "ES2022",
-    "lib": ["ES2023"],
-    "module": "ESNext",
-    "skipLibCheck": true,
-    "moduleResolution": "Bundler",
-    "allowSyntheticDefaultImports": true,
-    "strict": true,
-    "noEmit": true,
-    "resolveJsonModule": true
-  },
-  "include": ["vite.config.ts"]
-}
-</file>
-
-<file path="tsconfig.tsbuildinfo">
-{"root":["./src/app.tsx","./src/main.tsx","./src/vite-env.d.ts","./src/components/blockchain/chainstatus.tsx","./src/components/blockchain/walletconnect.tsx","./src/components/blockchain/index.ts","./src/components/credentials/credentialcard.tsx","./src/components/credentials/credentialdetailmodal.tsx","./src/components/credentials/credentialslist.tsx","./src/components/credentials/issuecredentialform.tsx","./src/components/credentials/verifycredential.tsx","./src/components/credentials/index.ts","./src/components/did/createdidform.tsx","./src/components/did/createdidmodal.tsx","./src/components/did/didstatus.tsx","./src/components/did/institutionregistration.tsx","./src/components/did/index.ts","./src/components/error/errorboundary.tsx","./src/components/layout/footer.tsx","./src/components/layout/header.tsx","./src/components/layout/mainlayout.tsx","./src/components/layout/sidebar.tsx","./src/components/layout/index.ts","./src/components/ui/badge.tsx","./src/components/ui/button.tsx","./src/components/ui/card.tsx","./src/components/ui/input.tsx","./src/components/ui/modal.tsx","./src/components/ui/spinner.tsx","./src/components/ui/index.ts","./src/hooks/blockchain/usebalance.ts","./src/hooks/blockchain/usepolkadotapi.ts","./src/lib/utils/cn.ts","./src/lib/utils/constants.ts","./src/pages/createdidpage.tsx","./src/pages/credentials.tsx","./src/pages/dashboard.tsx","./src/pages/home.tsx","./src/pages/institution.tsx","./src/pages/institutions.tsx","./src/pages/issuecredential.tsx","./src/pages/issuedcredentials.tsx","./src/pages/settings.tsx","./src/pages/verify.tsx","./src/providers/polkadotprovider.tsx","./src/providers/walletprovider.tsx","./src/store/credentials.store.ts","./src/store/did.store.ts","./src/store/ui.store.ts","./src/store/wallet.store.ts"],"errors":true,"version":"5.9.3"}
-</file>
-
-<file path="vite.config.ts">
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
-import tailwindcss from '@tailwindcss/vite'
-import path from 'path'
-import { nodePolyfills } from 'vite-plugin-node-polyfills'
-
-export default defineConfig({
-  plugins: [
-    react(), 
-    tailwindcss(),
-    nodePolyfills({
-      // Whether to polyfill `node:` protocol imports.
-      protocolImports: true,
-      // Whether to polyfill specific globals.
-      globals: {
-        Buffer: true,
-        global: true,
-        process: true,
-      },
-    })
-  ],
-  
-  resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src'),
-      // Fix bn.js default export issue
-      'bn.js': path.resolve(__dirname, './node_modules/bn.js/lib/bn.js'),
-      'eventemitter3': path.resolve(__dirname, './node_modules/eventemitter3/index.js'),
-    },
-  },
-  
-  optimizeDeps: {
-    include: [
-      'bn.js',
-      '@polkadot/util',
-      '@polkadot/util-crypto',
-    ],
-    // Exclude Polkadot packages from pre-bundling to avoid issues
-    exclude: [
-      '@polkadot/api',
-      '@polkadot/extension-dapp',
-      '@polkadot/keyring',
-      '@polkadot/types',
-      '@polkadot/rpc-provider',
-    ],
-    esbuildOptions: {
-      target: 'esnext',
-      supported: {
-        bigint: true,
-      },
-      // Handle Node.js built-ins
-      define: {
-        global: 'globalThis',
-      },
-    },
-  },
-  
-  build: {
-    target: 'esnext',
-    commonjsOptions: {
-      transformMixedEsModules: true,
-    },
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          'polkadot-core': ['@polkadot/api', '@polkadot/util', '@polkadot/util-crypto'],
-        },
-      },
-    },
-  },
-  
-  // Define global variables for browser compatibility
-  define: {
-    global: 'globalThis',
-    'process.env': {},
-  },
-  
-  server: {
-    port: 5174,
-    strictPort: false,
-  },
-})
-</file>
-
-</files>

@@ -1,4 +1,4 @@
-// src/components/credentials/VerifyCredential.tsx
+// src/components/credentials/VerifyCredential.tsx - FIXED VERSION
 import { useState, useEffect } from 'react';
 import { 
   Search, 
@@ -13,7 +13,6 @@ import {
   Building2,
   Calendar,
   User,
-  ExternalLink,
   Download,
   Shield,
   Award
@@ -23,6 +22,7 @@ import { Input } from '../ui/Input';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../ui/Card';
 import { Badge } from '../ui/Badge';
 import { toast } from 'sonner';
+import { useBlockchain } from '@/hooks/blockchain/useBlockchain';
 
 interface VerificationResult {
   found: boolean;
@@ -56,54 +56,99 @@ export default function VerifyCredential({ initialHash }: VerifyCredentialProps 
   const [isVerifying, setIsVerifying] = useState(false);
   const [verificationResult, setVerificationResult] = useState<VerificationResult | null>(null);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  
+  // Get blockchain queries
+  const { queries, isReady } = useBlockchain();
 
   // Auto-verify if initial hash is provided
   useEffect(() => {
-    if (initialHash && initialHash.length > 10) {
+    if (initialHash && initialHash.length > 10 && isReady) {
       verifyByHash(initialHash);
     }
-  }, [initialHash]);
+  }, [initialHash, isReady]);
 
-  // Verify credential by hash
+  // Helper to parse metadata
+  const parseMetadata = (metadata?: string): Record<string, any> => {
+    if (!metadata) return {};
+    try {
+      return JSON.parse(metadata);
+    } catch {
+      return { text: metadata };
+    }
+  };
+
+  // Verify credential by hash - NOW WITH REAL BLOCKCHAIN DATA
   const verifyByHash = async (hash: string) => {
     if (!hash || hash.length < 10) {
       toast.error('Please enter a valid credential hash');
       return;
     }
 
+    if (!queries || !isReady) {
+      toast.error('Blockchain not connected');
+      return;
+    }
+
+
     setIsVerifying(true);
     setVerificationResult(null);
 
     try {
-      // TODO: Replace with actual blockchain query
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      console.log('🔍 Verifying credential hash:', hash);
 
-      // Mock verification result
-      const mockResult: VerificationResult = {
+      // REAL BLOCKCHAIN QUERY - Get credential by hash
+      const credential = await queries.credential.getCredentialByHash(hash);
+
+      if (!credential) {
+        console.log('❌ Credential not found on blockchain');
+        setVerificationResult({ found: false });
+        toast.error('Credential not found');
+        setIsVerifying(false);
+        return;
+      }
+
+      console.log('✅ Found credential on blockchain:', credential);
+
+      // Fetch institution name for the issuer
+      let issuerName: string | undefined;
+      try {
+        const institution = await queries.did.getInstitution(credential.issuer);
+        issuerName = institution?.name;
+        console.log('✅ Found issuer institution:', issuerName);
+      } catch (error) {
+        console.warn('Could not fetch institution name:', error);
+      }
+
+      // Parse metadata for additional details
+      const metadata = parseMetadata(credential.metadata);
+
+      // Create verification result
+      const result: VerificationResult = {
         found: true,
         credential: {
-          id: 'cred_' + Math.random().toString(36).substr(2, 9),
-          holder: '5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY',
-          issuer: '5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty',
-          issuerName: 'Massachusetts Institute of Technology',
-          credentialHash: hash,
-          credentialType: "Bachelor's Degree",
-          degreeName: 'Bachelor of Science in Computer Science',
-          fieldOfStudy: 'Computer Science',
-          issuedAt: Date.now() - 365 * 24 * 60 * 60 * 1000,
-          revoked: false,
-          metadata: 'Graduated with honors. GPA: 3.85',
+          id: credential.id,
+          holder: credential.holder,
+          issuer: credential.issuer,
+          issuerName,
+          credentialHash: credential.credentialHash,
+          credentialType: credential.credentialType,
+          degreeName: metadata.degreeName || 'Academic Credential',
+          fieldOfStudy: metadata.fieldOfStudy,
+          issuedAt: credential.issuedAt,
+          expiresAt: credential.expiresAt,
+          revoked: credential.revoked,
+          metadata: credential.metadata,
         },
-        blockNumber: 12345678,
-        timestamp: Date.now() - 365 * 24 * 60 * 60 * 1000,
       };
 
-      setVerificationResult(mockResult);
-      toast.success('Credential verified successfully');
-    } catch (error) {
-      console.error('Verification failed:', error);
+      setVerificationResult(result);
+      toast.success('Credential verified on blockchain!');
+    } catch (error: any) {
+      console.error('❌ Verification failed:', error);
       setVerificationResult({ found: false });
-      toast.error('Verification failed');
+      toast.error('Verification failed', {
+        description: error.message || 'Please check the credential hash',
+      });
     } finally {
       setIsVerifying(false);
     }
@@ -159,7 +204,7 @@ export default function VerifyCredential({ initialHash }: VerifyCredentialProps 
       return {
         icon: XCircle,
         title: 'Credential Not Found',
-        description: 'This credential does not exist in the blockchain',
+        description: 'This credential does not exist on the blockchain',
         color: 'text-red-600',
         bgColor: 'bg-red-50 dark:bg-red-900/20',
         borderColor: 'border-red-200 dark:border-red-800',
@@ -193,7 +238,7 @@ export default function VerifyCredential({ initialHash }: VerifyCredentialProps 
     return {
       icon: CheckCircle2,
       title: 'Valid Credential',
-      description: 'This credential is authentic and active',
+      description: 'This credential is authentic and active on the blockchain',
       color: 'text-green-600',
       bgColor: 'bg-green-50 dark:bg-green-900/20',
       borderColor: 'border-green-200 dark:border-green-800',
@@ -201,6 +246,21 @@ export default function VerifyCredential({ initialHash }: VerifyCredentialProps 
   };
 
   const status = getVerificationStatus();
+
+  // Show connection warning if blockchain not ready
+  if (!isReady) {
+    return (
+      <Card>
+        <CardContent className="py-12 text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-3 text-primary" />
+          <p className="text-muted-foreground">Connecting to blockchain...</p>
+          <p className="text-xs text-muted-foreground mt-2">
+            Make sure your local node is running
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <div className="space-y-8">
@@ -212,7 +272,7 @@ export default function VerifyCredential({ initialHash }: VerifyCredentialProps 
             Verify Academic Credential
           </CardTitle>
           <CardDescription>
-            Enter a credential hash, upload a credential file, or scan a QR code to verify authenticity
+            Enter a credential hash, upload a credential file, or scan a QR code to verify authenticity on the blockchain
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -328,7 +388,7 @@ export default function VerifyCredential({ initialHash }: VerifyCredentialProps 
                       Remove
                     </button>
                   </div>
-                )}
+              )}
               </div>
             </div>
           )}
@@ -351,6 +411,21 @@ export default function VerifyCredential({ initialHash }: VerifyCredentialProps 
               </div>
             </div>
           )}
+
+          {/* Blockchain Status */}
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+            <div className="flex items-start space-x-3">
+              <Shield className="h-5 w-5 text-blue-600 dark:text-blue-500 flex-shrink-0 mt-0.5" />
+              <div className="text-sm">
+                <p className="font-semibold text-blue-800 dark:text-blue-400">
+                  Live Blockchain Verification
+                </p>
+                <p className="text-blue-700 dark:text-blue-300 mt-1">
+                  All verifications query the blockchain directly. No cached or mock data.
+                </p>
+              </div>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
@@ -488,10 +563,7 @@ export default function VerifyCredential({ initialHash }: VerifyCredentialProps 
                           Blockchain Verified
                         </p>
                         <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
-                          This credential is permanently recorded on the blockchain.
-                          {verificationResult.blockNumber && (
-                            <> Verified at block #{verificationResult.blockNumber.toLocaleString()}</>
-                          )}
+                          This credential is permanently recorded on the blockchain and verified in real-time.
                         </p>
                       </div>
                     </div>
@@ -517,9 +589,7 @@ export default function VerifyCredential({ initialHash }: VerifyCredentialProps 
                     </Button>
                     <Button
                       variant="outline"
-                      onClick={() => {
-                        window.print();
-                      }}
+                      onClick={() => window.print()}
                     >
                       <FileText className="h-4 w-4 mr-2" />
                       Print
@@ -580,12 +650,12 @@ export default function VerifyCredential({ initialHash }: VerifyCredentialProps 
                 </div>
                 <h4 className="font-semibold mb-2">Instant Verification</h4>
                 <p className="text-sm text-muted-foreground">
-                  Verify any credential in seconds without needing to contact the issuing institution.
+                  Verify any credential in seconds by querying the blockchain directly.
                 </p>
               </div>
               <div>
                 <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center mb-3">
-                  <ExternalLink className="h-6 w-6 text-primary" />
+                  <Award className="h-6 w-6 text-primary" />
                 </div>
                 <h4 className="font-semibold mb-2">Public Access</h4>
                 <p className="text-sm text-muted-foreground">
@@ -599,4 +669,3 @@ export default function VerifyCredential({ initialHash }: VerifyCredentialProps 
     </div>
   );
 }
-

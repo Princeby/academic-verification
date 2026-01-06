@@ -288,7 +288,7 @@ export default function Dashboard() {
                 </div>
               </div>
               <Button asChild>
-                <Link to="/institution">
+                <Link to="/institution/register">
                   Register Now
                 </Link>
               </Button>

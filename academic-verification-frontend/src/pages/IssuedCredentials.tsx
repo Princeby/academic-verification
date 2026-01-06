@@ -1,4 +1,4 @@
-// src/pages/IssuedCredentials.tsx
+// src/pages/IssuedCredentials.tsx - UPDATED WITH REAL BLOCKCHAIN QUERIES
 import { useState, useEffect } from 'react';
 import { useDIDStore } from '@/store/did.store';
 import { useNavigate } from 'react-router-dom';
@@ -21,7 +21,8 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useBlockchain } from '@/hooks/blockchain/useBlockchain';
-import { formatCredentialType } from '@/lib/blockchain/integration';
+import { web3FromAddress } from '@polkadot/extension-dapp';
+import { useWalletStore } from '@/store/wallet.store';
 
 interface IssuedCredential {
   id: string;
@@ -29,22 +30,22 @@ interface IssuedCredential {
   holderName?: string;
   credentialType: string;
   degreeName: string;
-  fieldOfStudy?: string;
   issuedAt: number;
   status: 'active' | 'revoked';
-  credentialHash: string;
+  metadata?: string;
 }
 
 export default function IssuedCredentials() {
   const navigate = useNavigate();
   const { isInstitution, didAddress } = useDIDStore();
-  const { queries, isReady, transactions, account } = useBlockchain();
+  const { queries, transactions, isReady, api } = useBlockchain();
+  const { account } = useWalletStore();
   
   const [credentials, setCredentials] = useState<IssuedCredential[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'revoked'>('all');
-  const [refreshing, setRefreshing] = useState(false);
   const [revoking, setRevoking] = useState<string | null>(null);
 
   useEffect(() => {
@@ -52,7 +53,7 @@ export default function IssuedCredentials() {
       navigate('/institution');
       return;
     }
-
+    
     if (isReady && queries && didAddress) {
       fetchIssuedCredentials();
     }
@@ -66,42 +67,53 @@ export default function IssuedCredentials() {
 
     setLoading(true);
     try {
-      console.log('📡 Fetching issued credentials for institution:', didAddress);
+      console.log('📡 Fetching issued credentials for:', didAddress);
       
-      // Fetch credentials issued by this institution from blockchain
+      // Fetch credentials from blockchain
       const blockchainCredentials = await queries.credential.getCredentialsByIssuer(didAddress);
       
       console.log('✅ Fetched issued credentials:', blockchainCredentials);
       
       if (blockchainCredentials.length === 0) {
-        console.log('ℹ️ No credentials issued yet');
+        console.log('ℹ️ No issued credentials found');
         setCredentials([]);
         setLoading(false);
         return;
       }
 
-      // Process credentials and format for display
-      const processedCredentials: IssuedCredential[] = blockchainCredentials.map((cred) => {
-        const metadata = parseMetadata(cred.metadata);
-        
+      // Parse and format credentials
+      const formattedCredentials: IssuedCredential[] = blockchainCredentials.map((cred: any) => {
+        let degreeName = 'Academic Credential';
+        let metadata = '';
+
+        // Parse metadata
+        if (cred.metadata) {
+          try {
+            const parsedMetadata = JSON.parse(cred.metadata);
+            degreeName = parsedMetadata.degreeName || parsedMetadata.programName || degreeName;
+            metadata = cred.metadata;
+          } catch (e) {
+            degreeName = cred.metadata;
+            metadata = cred.metadata;
+          }
+        }
+
         return {
           id: cred.id,
           holder: cred.holder,
-          holderName: undefined, // We'll fetch this if needed
-          credentialType: formatCredentialType(cred.credentialType),
-          degreeName: metadata.degreeName || 'Academic Credential',
-          fieldOfStudy: metadata.fieldOfStudy,
+          credentialType: cred.credentialType,
+          degreeName,
           issuedAt: cred.issuedAt,
           status: cred.revoked ? 'revoked' : 'active',
-          credentialHash: cred.credentialHash,
-        } as IssuedCredential;
+          metadata,
+        };
       });
 
-      console.log('✅ Processed credentials:', processedCredentials);
-      setCredentials(processedCredentials);
+      console.log('✅ Formatted credentials:', formattedCredentials);
+      setCredentials(formattedCredentials);
       
-      if (processedCredentials.length > 0) {
-        toast.success(`Found ${processedCredentials.length} issued credential(s)`);
+      if (formattedCredentials.length > 0) {
+        toast.success(`Found ${formattedCredentials.length} issued credential(s)`);
       }
     } catch (error: any) {
       console.error('❌ Failed to fetch issued credentials:', error);
@@ -125,23 +137,34 @@ export default function IssuedCredentials() {
       return;
     }
 
-    if (!transactions || !account) {
-      toast.error('Wallet not connected');
+    if (!transactions || !account || !api) {
+      toast.error('Blockchain not connected');
       return;
     }
 
     setRevoking(credentialId);
 
     try {
-      console.log('🔄 Revoking credential:', credentialId);
-      
+      console.log('🔐 Revoking credential:', credentialId);
+
+      const statusToast = toast.loading('Preparing transaction...');
+
+      // Convert credentialId string to bytes if needed
+      const credentialIdBytes = credentialId.startsWith('0x') 
+        ? credentialId 
+        : '0x' + credentialId;
+
+      // Revoke credential
       const result = await transactions.credential.revokeCredential(
         account,
-        credentialId,
+        credentialIdBytes,
         (status) => {
-          console.log('Transaction status:', status);
           if (status.status === 'signing') {
-            toast.info('Please sign the transaction');
+            toast.loading('Waiting for signature...', { id: statusToast });
+          } else if (status.status === 'inBlock') {
+            toast.loading('Transaction in block...', { id: statusToast });
+          } else if (status.status === 'finalized') {
+            toast.dismiss(statusToast);
           }
         }
       );
@@ -156,36 +179,27 @@ export default function IssuedCredentials() {
           )
         );
         
-        toast.success('Credential revoked successfully');
+        toast.success('Credential revoked successfully', {
+          description: `Transaction: ${result.transactionHash?.slice(0, 10)}...`,
+        });
       } else {
         throw new Error(result.error || 'Transaction failed');
       }
     } catch (error: any) {
       console.error('❌ Failed to revoke credential:', error);
       toast.error('Failed to revoke credential', {
-        description: error.message || 'Please try again',
+        description: error.message || 'Check console for details',
       });
     } finally {
       setRevoking(null);
     }
   };
 
-  // Helper function to parse metadata
-  function parseMetadata(metadata?: string): Record<string, any> {
-    if (!metadata) return {};
-    try {
-      return JSON.parse(metadata);
-    } catch {
-      return { text: metadata };
-    }
-  }
-
   const filteredCredentials = credentials.filter(cred => {
     const matchesSearch = !searchQuery || 
       cred.degreeName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       cred.holderName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      cred.holder.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      cred.fieldOfStudy?.toLowerCase().includes(searchQuery.toLowerCase());
+      cred.holder.toLowerCase().includes(searchQuery.toLowerCase());
     
     const matchesStatus = filterStatus === 'all' || cred.status === filterStatus;
     
@@ -198,12 +212,10 @@ export default function IssuedCredentials() {
     revoked: credentials.filter(c => c.status === 'revoked').length,
   };
 
-  // Not an institution - redirect
   if (!isInstitution) {
     return null;
   }
 
-  // Blockchain not ready
   if (!isReady) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -211,9 +223,6 @@ export default function IssuedCredentials() {
           <CardContent className="py-12 text-center">
             <Loader2 className="h-8 w-8 animate-spin mx-auto mb-3 text-primary" />
             <p className="text-muted-foreground">Connecting to blockchain...</p>
-            <p className="text-xs text-muted-foreground mt-2">
-              Make sure your local node is running
-            </p>
           </CardContent>
         </Card>
       </div>
@@ -230,7 +239,7 @@ export default function IssuedCredentials() {
             Issued Credentials
           </h1>
           <p className="text-muted-foreground mt-1">
-            Manage credentials issued by your institution
+            Manage credentials issued by your institution from the blockchain
           </p>
         </div>
         <div className="flex gap-2">
@@ -258,8 +267,7 @@ export default function IssuedCredentials() {
               Connected to Blockchain
             </p>
             <p className="text-blue-700 dark:text-blue-300 mt-1">
-              All credentials are fetched directly from the blockchain. 
-              Your DID: <code className="text-xs font-mono">{didAddress?.slice(0, 10)}...{didAddress?.slice(-8)}</code>
+              All credentials are fetched directly from the blockchain.
             </p>
           </div>
         </div>
@@ -382,17 +390,11 @@ export default function IssuedCredentials() {
                       <Badge variant="outline">{credential.credentialType}</Badge>
                     </div>
                     
-                    {credential.fieldOfStudy && (
-                      <p className="text-sm text-muted-foreground mb-2">
-                        {credential.fieldOfStudy}
-                      </p>
-                    )}
-                    
                     <div className="space-y-1 text-sm">
                       <div className="flex items-center text-muted-foreground">
                         <User className="h-3 w-3 mr-2" />
                         <span>
-                          {credential.holderName || 'Holder'} 
+                          {credential.holderName || 'Unknown'} 
                           <code className="ml-2 text-xs">
                             {credential.holder.slice(0, 8)}...{credential.holder.slice(-6)}
                           </code>
@@ -409,11 +411,7 @@ export default function IssuedCredentials() {
                   </div>
 
                   <div className="flex flex-col sm:flex-row gap-2 ml-4">
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      onClick={() => window.open(`/verify?hash=${credential.credentialHash}`, '_blank')}
-                    >
+                    <Button variant="outline" size="sm">
                       <Eye className="h-3 w-3 mr-1" />
                       View
                     </Button>

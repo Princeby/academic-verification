@@ -21,6 +21,7 @@ import CreateDIDPage from './pages/CreateDIDPage';
 import MyRequests from './pages/MyRequests';
 import InstitutionRequests from './pages/InstitutionRequests';
 import AdminVerification from './pages/AdminVerification';
+import InstitutionRegistration from './components/did/InstitutionRegistration';
 
 // Error Boundary
 import ErrorBoundary from './components/error/ErrorBoundary';
@@ -76,6 +77,7 @@ function App() {
                     
                     {/* Institution Routes */}
                     <Route path="/institution" element={<Institution />} />
+                    <Route path="/institution/register" element={<InstitutionRegistration />} />
                     <Route path="/institution/issue" element={<IssueCredential />} />
                     <Route path="/institution/issued" element={<IssuedCredentials />} />
                     <Route path="/institution/requests" element={<InstitutionRequests />} />
