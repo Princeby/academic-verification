@@ -53,14 +53,14 @@ export default function AdminVerification() {
     setLoading(true);
     try {
       const entries = await api.query.did.institutions.entries();
-      
+
       const institutionsList: PendingInstitution[] = entries
         .map(([key, value]) => {
           if (value.isEmpty) return null;
-          
+
           const address = key.args[0].toString();
           const data = value.toJSON() as any;
-          
+
           return {
             address,
             name: decodeInstitutionName(data.name),
@@ -104,14 +104,14 @@ export default function AdminVerification() {
       // IMPORTANT: Wrap with sudo.sudo() since this requires root origin
       const verifyTx = api.tx.did.verifyInstitution(institutionDid);
       const tx = api.tx.sudo.sudo(verifyTx);
-      
+
       console.log('📝 Created SUDO transaction, requesting signature...');
 
       // Sign and send
       await tx.signAndSend(
         account.address,
         { signer: injector.signer },
-        ({ status, events, dispatchError }) => {
+        ({ status, dispatchError }) => {
           console.log('📡 Transaction status:', status.type);
 
           if (status.isFinalized) {
@@ -119,7 +119,7 @@ export default function AdminVerification() {
 
             if (dispatchError) {
               console.error('❌ Dispatch error:', dispatchError.toString());
-              
+
               if (dispatchError.isModule) {
                 const decoded = api.registry.findMetaError(dispatchError.asModule);
                 throw new Error(`${decoded.section}.${decoded.name}: ${decoded.docs.join(' ')}`);
@@ -131,7 +131,7 @@ export default function AdminVerification() {
             // Success - update local state
             setInstitutions(prev =>
               prev.map(inst =>
-                inst.did === institutionDid
+                inst.address === institutionDid
                   ? { ...inst, verified: true }
                   : inst
               )
@@ -164,10 +164,10 @@ export default function AdminVerification() {
 
     try {
       console.log('🔐 Starting revocation for:', institutionAddress);
-      
+
       const injector = await web3FromAddress(account.address);
       const tx = api.tx.did.revokeInstitution(institutionAddress);
-      
+
       await tx.signAndSend(
         account.address,
         { signer: injector.signer },

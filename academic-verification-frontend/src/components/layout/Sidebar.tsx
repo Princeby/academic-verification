@@ -92,7 +92,7 @@
 //           {navigationItems.map((item) => {
 //             const Icon = item.icon;
 //             const isActive = location.pathname === item.href;
-            
+
 //             return (
 //               <Link
 //                 key={item.href}
@@ -119,7 +119,7 @@
 //               {institutionItems.map((item) => {
 //                 const Icon = item.icon;
 //                 const isActive = location.pathname === item.href;
-                
+
 //                 return (
 //                   <Link
 //                     key={item.href}
@@ -162,12 +162,11 @@
 // }
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { 
-  LayoutDashboard, 
-  Award, 
-  Building2, 
-  CheckCircle, 
-  Users,
+import {
+  LayoutDashboard,
+  Award,
+  Building2,
+  CheckCircle,
   FileText,
   Settings,
   Plus,
@@ -189,11 +188,6 @@ const navigationItems = [
     title: 'My Credentials',
     href: '/credentials',
     icon: Award,
-  },
-  {
-    title: 'My Requests',
-    href: '/my-requests',
-    icon: FileText,
   },
   {
     title: 'Institutions',
@@ -222,11 +216,6 @@ const institutionItems = [
     title: 'Issued Credentials',
     href: '/institution/issued',
     icon: FileText,
-  },
-  {
-    title: 'Requests',
-    href: '/institution/requests',
-    icon: Users,
   },
 ];
 
@@ -259,8 +248,8 @@ export default function Sidebar() {
         {/* Quick Actions */}
         {!hasDID && (
           <div className="mb-6 px-3 space-y-2">
-            <Button 
-              className="w-full justify-start" 
+            <Button
+              className="w-full justify-start"
               size="sm"
               onClick={() => setShowCreateDIDModal(true)}
             >
@@ -278,7 +267,7 @@ export default function Sidebar() {
           {navigationItems.map((item) => {
             const Icon = item.icon;
             const isActive = location.pathname === item.href;
-            
+
             return (
               <Link
                 key={item.href}
@@ -305,7 +294,7 @@ export default function Sidebar() {
               {institutionItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = location.pathname === item.href;
-                
+
                 return (
                   <Link
                     key={item.href}
@@ -335,7 +324,7 @@ export default function Sidebar() {
               {adminItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = location.pathname === item.href;
-                
+
                 return (
                   <Link
                     key={item.href}
@@ -369,7 +358,7 @@ export default function Sidebar() {
       </div>
 
       {/* Create DID Modal */}
-      <CreateDIDModal 
+      <CreateDIDModal
         isOpen={showCreateDIDModal}
         onClose={() => setShowCreateDIDModal(false)}
       />

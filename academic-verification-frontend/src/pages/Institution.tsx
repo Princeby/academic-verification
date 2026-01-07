@@ -7,13 +7,13 @@ import { usePolkadotContext } from '@/providers/PolkadotProvider';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
-import { 
-  Building2, 
-  FileText, 
-  Users, 
-  Award, 
-  Plus, 
-  RefreshCw, 
+import {
+  Building2,
+  FileText,
+  Users,
+  Award,
+  Plus,
+  RefreshCw,
   Loader2,
   TrendingUp,
   CheckCircle,
@@ -64,7 +64,7 @@ export default function Institution() {
 
       // Fetch institution info
       const institutionInfo = await api.query.did.institutions(didAddress);
-      
+
       if (institutionInfo.isEmpty) {
         console.warn('No institution data found');
         toast.error('Institution data not found');
@@ -91,20 +91,34 @@ export default function Institution() {
         }
       }
 
+      // Handle registeredAt - could be timestamp in seconds, block number, or 0
+      console.log('📅 Raw registeredAt value:', instData.registeredAt);
+      let registeredAtMs = instData.registeredAt || 0;
+
+      // If it's a reasonable timestamp in seconds (after year 2020)
+      if (registeredAtMs > 1577836800 && registeredAtMs < 10000000000) {
+        // Convert seconds to milliseconds
+        registeredAtMs = registeredAtMs * 1000;
+      } else if (registeredAtMs > 0 && registeredAtMs < 1577836800) {
+        // Likely a block number, not a timestamp - use current date
+        console.log('📅 Detected block number instead of timestamp, using current date');
+        registeredAtMs = Date.now();
+      }
+
       setInstitutionData({
         name: decodedName,
         did: instData.did || didAddress,
         verified: instData.verified || false,
-        registeredAt: instData.registeredAt || Date.now(),
+        registeredAt: registeredAtMs > 0 ? registeredAtMs : Date.now(),
       });
 
       // Fetch reputation score
       const reputationData = await api.query.reputation.reputationScores(didAddress);
-      
+
       if (!reputationData.isEmpty) {
         const repData = reputationData.toJSON() as any;
         console.log('✅ Reputation data:', repData);
-        
+
         setReputation({
           credentialsIssued: repData.credentialsIssued || 0,
           credentialsVerified: repData.credentialsVerified || 0,
@@ -124,7 +138,7 @@ export default function Institution() {
 
       // Fetch issued credentials count
       const issuedCredentials = await api.query.credential.credentialsByIssuer(didAddress);
-      
+
       if (!issuedCredentials.isEmpty) {
         const credentials = issuedCredentials.toJSON() as any[];
         console.log('✅ Issued credentials count:', credentials.length);
@@ -374,8 +388,8 @@ export default function Institution() {
           <CardTitle>Quick Actions</CardTitle>
         </CardHeader>
         <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Button 
-            variant="outline" 
+          <Button
+            variant="outline"
             className="justify-start h-auto py-4"
             onClick={() => navigate('/institution/issue')}
           >
@@ -390,8 +404,8 @@ export default function Institution() {
             </div>
           </Button>
 
-          <Button 
-            variant="outline" 
+          <Button
+            variant="outline"
             className="justify-start h-auto py-4"
             onClick={() => navigate('/institution/issued')}
           >
@@ -406,8 +420,8 @@ export default function Institution() {
             </div>
           </Button>
 
-          <Button 
-            variant="outline" 
+          <Button
+            variant="outline"
             className="justify-start h-auto py-4"
             onClick={() => navigate('/institution/requests')}
           >
@@ -433,7 +447,7 @@ export default function Institution() {
               Connected to Blockchain
             </p>
             <p className="text-blue-700 dark:text-blue-300 mt-1">
-              All data is fetched directly from the blockchain in real-time. 
+              All data is fetched directly from the blockchain in real-time.
               Click refresh to update with the latest information.
             </p>
           </div>

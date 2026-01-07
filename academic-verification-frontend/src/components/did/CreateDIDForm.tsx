@@ -8,7 +8,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../ui
 import { Input } from '../ui/Input';
 import { Badge } from '../ui/Badge';
 import { toast } from 'sonner';
-import { mnemonicGenerate, mnemonicToMiniSecret, naclKeypairFromSeed } from '@polkadot/util-crypto';
+import { mnemonicGenerate } from '@polkadot/util-crypto';
 import { u8aToHex } from '@polkadot/util';
 import { Keyring } from '@polkadot/keyring';
 import { useBlockchain } from '@/hooks/blockchain/useBlockchain';
@@ -81,32 +81,32 @@ export default function CreateDIDForm({ onSuccess, onCancel }: CreateDIDFormProp
   const generateKeys = async () => {
     try {
       setStep('generate');
-      
+
       // Generate a random 12-word mnemonic
       const mnemonic = mnemonicGenerate(12);
-      
+
       await new Promise(resolve => setTimeout(resolve, 500));
-      
+
       // Create keyring with the selected key type
-      const keyring = new Keyring({ 
-        type: selectedKeyType.toLowerCase() as 'ed25519' | 'sr25519' | 'ecdsa' 
+      const keyring = new Keyring({
+        type: selectedKeyType.toLowerCase() as 'ed25519' | 'sr25519' | 'ecdsa'
       });
-      
+
       // Create keypair from mnemonic
       const pair = keyring.addFromMnemonic(mnemonic);
-      
+
       const keys = {
         publicKey: u8aToHex(pair.publicKey),
         mnemonic: mnemonic,
         address: pair.address,
       };
-      
+
       console.log('Generated keys:', {
         address: keys.address,
         publicKey: keys.publicKey,
         keyType: selectedKeyType,
       });
-      
+
       setGeneratedKeys(keys);
       setStep('backup');
       toast.success('Keys generated successfully');
@@ -132,7 +132,7 @@ export default function CreateDIDForm({ onSuccess, onCancel }: CreateDIDFormProp
   // Download backup file
   const downloadBackup = () => {
     if (!generatedKeys) return;
-    
+
     const backup = {
       publicKey: generatedKeys.publicKey,
       mnemonic: generatedKeys.mnemonic,
@@ -141,7 +141,7 @@ export default function CreateDIDForm({ onSuccess, onCancel }: CreateDIDFormProp
       createdAt: new Date().toISOString(),
       warning: 'KEEP THIS FILE SECURE! Anyone with this information can control your DID.',
     };
-    
+
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -151,7 +151,7 @@ export default function CreateDIDForm({ onSuccess, onCancel }: CreateDIDFormProp
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    
+
     toast.success('Backup file downloaded');
   };
 
@@ -161,17 +161,17 @@ export default function CreateDIDForm({ onSuccess, onCancel }: CreateDIDFormProp
       toast.error('Wallet not connected or blockchain not ready');
       return;
     }
-    
+
     setIsSubmitting(true);
-    
+
     try {
       console.log('🚀 Submitting DID creation to blockchain...');
-      
+
       // Convert hex public key to Uint8Array
-      const publicKeyHex = generatedKeys.publicKey.startsWith('0x') 
-        ? generatedKeys.publicKey.slice(2) 
+      const publicKeyHex = generatedKeys.publicKey.startsWith('0x')
+        ? generatedKeys.publicKey.slice(2)
         : generatedKeys.publicKey;
-      
+
       const publicKeyBytes = new Uint8Array(
         publicKeyHex.match(/.{1,2}/g)!.map(byte => parseInt(byte, 16))
       );
@@ -190,7 +190,7 @@ export default function CreateDIDForm({ onSuccess, onCancel }: CreateDIDFormProp
         (status) => {
           console.log('Transaction status:', status);
           setTransactionStatus(status.message);
-          
+
           if (status.status === 'signing') {
             toast.info('Please sign the transaction in your wallet');
           } else if (status.status === 'inBlock') {
@@ -201,7 +201,7 @@ export default function CreateDIDForm({ onSuccess, onCancel }: CreateDIDFormProp
 
       if (result.success) {
         console.log('✅ DID created successfully!', result);
-        
+
         // Update DID store
         setDID(generatedKeys.address, [{
           id: 'primary_key',
@@ -209,20 +209,20 @@ export default function CreateDIDForm({ onSuccess, onCancel }: CreateDIDFormProp
           publicKey: generatedKeys.publicKey,
           addedAt: Date.now(),
         }]);
-        
+
         toast.success('DID created successfully!', {
           description: `Block: ${result.blockHash?.slice(0, 10)}...`,
         });
-        
+
         onSuccess?.(generatedKeys.address);
       } else {
         throw new Error(result.error || 'Transaction failed');
       }
     } catch (error: any) {
       console.error('❌ Failed to create DID:', error);
-      
+
       let errorMessage = 'Failed to create DID';
-      
+
       if (error.message?.includes('1010')) {
         errorMessage = 'Insufficient balance for transaction fee';
       } else if (error.message?.includes('rejected')) {
@@ -232,7 +232,7 @@ export default function CreateDIDForm({ onSuccess, onCancel }: CreateDIDFormProp
       } else if (error.message) {
         errorMessage = error.message;
       }
-      
+
       toast.error(errorMessage, {
         description: 'Please check your balance and try again',
       });
@@ -291,8 +291,8 @@ export default function CreateDIDForm({ onSuccess, onCancel }: CreateDIDFormProp
                 key={type.value}
                 className={`
                   flex items-start p-4 border-2 rounded-lg cursor-pointer transition-all
-                  ${selectedKeyType === type.value 
-                    ? 'border-primary bg-primary/5' 
+                  ${selectedKeyType === type.value
+                    ? 'border-primary bg-primary/5'
                     : 'border-border hover:border-primary/50'
                   }
                 `}
@@ -322,7 +322,7 @@ export default function CreateDIDForm({ onSuccess, onCancel }: CreateDIDFormProp
               <div className="text-sm">
                 <p className="font-semibold text-yellow-800 dark:text-yellow-400">Important Security Notice</p>
                 <p className="text-yellow-700 dark:text-yellow-300 mt-1">
-                  You will receive a randomly generated recovery phrase. Write it down and store it safely. 
+                  You will receive a randomly generated recovery phrase. Write it down and store it safely.
                   Anyone with this phrase can control your DID.
                 </p>
               </div>
@@ -335,8 +335,8 @@ export default function CreateDIDForm({ onSuccess, onCancel }: CreateDIDFormProp
                 Cancel
               </Button>
             )}
-            <Button 
-              onClick={generateKeys} 
+            <Button
+              onClick={generateKeys}
               className="ml-auto"
               disabled={!account || !isReady}
             >
@@ -381,9 +381,9 @@ export default function CreateDIDForm({ onSuccess, onCancel }: CreateDIDFormProp
           <div>
             <label className="text-sm font-semibold mb-2 block">Your DID Address</label>
             <div className="flex items-center space-x-2">
-              <Input 
-                value={generatedKeys?.address || ''} 
-                readOnly 
+              <Input
+                value={generatedKeys?.address || ''}
+                readOnly
                 className="font-mono text-sm"
               />
               <Button
@@ -400,9 +400,9 @@ export default function CreateDIDForm({ onSuccess, onCancel }: CreateDIDFormProp
           <div>
             <label className="text-sm font-semibold mb-2 block">Public Key</label>
             <div className="flex items-center space-x-2">
-              <Input 
-                value={generatedKeys?.publicKey || ''} 
-                readOnly 
+              <Input
+                value={generatedKeys?.publicKey || ''}
+                readOnly
                 className="font-mono text-sm"
               />
               <Button
@@ -433,10 +433,10 @@ export default function CreateDIDForm({ onSuccess, onCancel }: CreateDIDFormProp
             </div>
             <div className="space-y-2">
               <div className="relative">
-                <Input 
-                  value={generatedKeys?.mnemonic || ''} 
+                <Input
+                  value={generatedKeys?.mnemonic || ''}
                   type={showMnemonic ? 'text' : 'password'}
-                  readOnly 
+                  readOnly
                   className="font-mono text-sm pr-20"
                 />
                 <div className="absolute right-2 top-1/2 -translate-y-1/2 flex space-x-1">
@@ -499,7 +499,7 @@ export default function CreateDIDForm({ onSuccess, onCancel }: CreateDIDFormProp
               className="mt-1"
             />
             <span className="text-sm">
-              I have securely backed up my recovery phrase and understand that I cannot recover 
+              I have securely backed up my recovery phrase and understand that I cannot recover
               my DID without it. I accept full responsibility for keeping it safe.
             </span>
           </label>
@@ -521,8 +521,8 @@ export default function CreateDIDForm({ onSuccess, onCancel }: CreateDIDFormProp
 
           {/* Actions */}
           <div className="flex justify-between pt-4">
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               onClick={() => {
                 setStep('select');
                 setGeneratedKeys(null);

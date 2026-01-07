@@ -5,7 +5,7 @@ import type { ApiPromise } from '@polkadot/api';
  * Query DID information
  */
 export class DIDQueries {
-  constructor(private api: ApiPromise) {}
+  constructor(private api: ApiPromise) { }
 
   async getDID(address: string) {
     try {
@@ -39,7 +39,7 @@ export class DIDQueries {
   }
 
   async isVerifiedInstitution(address: string): Promise<boolean> {
-    const institution = await this.getInstitution(address);
+    const institution = await this.getInstitution(address) as { verified?: boolean } | null;
     return institution?.verified === true;
   }
 }
@@ -48,7 +48,7 @@ export class DIDQueries {
  * Query Credential information
  */
 export class CredentialQueries {
-  constructor(private api: ApiPromise) {}
+  constructor(private api: ApiPromise) { }
 
   async getCredential(credentialId: string) {
     try {
@@ -69,7 +69,7 @@ export class CredentialQueries {
       if (credentialId.isEmpty) {
         return null;
       }
-      
+
       const id = credentialId.toString();
       return this.getCredential(id);
     } catch (error) {
@@ -84,14 +84,14 @@ export class CredentialQueries {
       if (credentials.isEmpty) {
         return [];
       }
-      
+
       const credentialRefs = credentials.toJSON() as any[];
-      
+
       // Fetch full credentials
       const fullCredentials = await Promise.all(
         credentialRefs.map(ref => this.getCredential(ref.credentialId))
       );
-      
+
       return fullCredentials.filter(c => c !== null);
     } catch (error) {
       console.error('Error fetching credentials by holder:', error);
@@ -105,14 +105,14 @@ export class CredentialQueries {
       if (credentialIds.isEmpty) {
         return [];
       }
-      
+
       const ids = credentialIds.toJSON() as string[];
-      
+
       // Fetch full credentials
       const fullCredentials = await Promise.all(
         ids.map(id => this.getCredential(id))
       );
-      
+
       return fullCredentials.filter(c => c !== null);
     } catch (error) {
       console.error('Error fetching credentials by issuer:', error);
@@ -125,7 +125,7 @@ export class CredentialQueries {
  * Query Reputation information
  */
 export class ReputationQueries {
-  constructor(private api: ApiPromise) {}
+  constructor(private api: ApiPromise) { }
 
   async getReputationScore(address: string) {
     try {

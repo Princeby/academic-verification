@@ -30,9 +30,11 @@ export function useBalance() {
       setLoading(true);
       try {
         // Subscribe to balance changes
-        unsubscribe = await api.query.system.account(
+        const unsub = await api.query.system.account(
           account.address,
-          ({ data: { free, reserved, frozen } }) => {
+          (accountInfo: unknown) => {
+            const info = accountInfo as { data: { free: { toString(): string }; reserved: { toString(): string }; frozen: { toString(): string } } };
+            const { data: { free, reserved, frozen } } = info;
             const freeBalance = free.toString();
             const reservedBalance = reserved.toString();
             const frozenBalance = frozen.toString();
@@ -57,6 +59,7 @@ export function useBalance() {
             setBalance(formatted);
           }
         );
+        unsubscribe = unsub as unknown as () => void;
       } catch (error) {
         console.error('Failed to fetch balance:', error);
       } finally {

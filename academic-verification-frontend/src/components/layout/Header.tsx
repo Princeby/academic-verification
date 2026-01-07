@@ -26,32 +26,26 @@ export default function Header() {
 
           {/* Desktop Navigation */}
           <nav className="hidden md:flex items-center space-x-6">
-            <Link 
-              to="/dashboard" 
+            <Link
+              to="/dashboard"
               className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
             >
               Dashboard
             </Link>
-            <Link 
-              to="/credentials" 
+            <Link
+              to="/credentials"
               className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
             >
               Credentials
             </Link>
-            <Link 
-              to="/my-requests" 
-              className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-            >
-              My Requests
-            </Link>
-            <Link 
-              to="/institutions" 
+            <Link
+              to="/institutions"
               className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
             >
               Institutions
             </Link>
-            <Link 
-              to="/verify" 
+            <Link
+              to="/verify"
               className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
             >
               Verify
@@ -91,36 +85,29 @@ export default function Header() {
         {mobileMenuOpen && (
           <div className="md:hidden py-4 border-t border-border">
             <nav className="flex flex-col space-y-3">
-              <Link 
-                to="/dashboard" 
+              <Link
+                to="/dashboard"
                 className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors py-2"
                 onClick={() => setMobileMenuOpen(false)}
               >
                 Dashboard
               </Link>
-              <Link 
-                to="/credentials" 
+              <Link
+                to="/credentials"
                 className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors py-2"
                 onClick={() => setMobileMenuOpen(false)}
               >
                 Credentials
               </Link>
-              <Link 
-                to="/my-requests" 
-                className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors py-2"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                My Requests
-              </Link>
-              <Link 
-                to="/institutions" 
+              <Link
+                to="/institutions"
                 className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors py-2"
                 onClick={() => setMobileMenuOpen(false)}
               >
                 Institutions
               </Link>
-              <Link 
-                to="/verify" 
+              <Link
+                to="/verify"
                 className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors py-2"
                 onClick={() => setMobileMenuOpen(false)}
               >

@@ -1,12 +1,12 @@
 // src/components/credentials/CredentialDetailModal.tsx - FIXED WITH HEX DECODING
-import { 
-  X, 
-  Award, 
-  Building2, 
-  User, 
-  Calendar, 
-  FileText, 
-  Hash, 
+import {
+  X,
+  Award,
+  Building2,
+  User,
+  Calendar,
+  FileText,
+  Hash,
   ExternalLink,
   Copy,
   Download,
@@ -28,10 +28,10 @@ interface CredentialDetailModalProps {
   credential: Credential | null;
 }
 
-export default function CredentialDetailModal({ 
-  isOpen, 
-  onClose, 
-  credential 
+export default function CredentialDetailModal({
+  isOpen,
+  onClose,
+  credential
 }: CredentialDetailModalProps) {
   if (!credential) return null;
 
@@ -106,7 +106,7 @@ export default function CredentialDetailModal({
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    
+
     toast.success('Credential exported');
   };
 
@@ -302,12 +302,12 @@ export default function CredentialDetailModal({
                   {Object.entries(metadata).map(([key, value]) => {
                     // Skip empty values and text field
                     if (!value || value === '' || key === 'text') return null;
-                    
+
                     // Format key name
                     const formattedKey = key
                       .replace(/([A-Z])/g, ' $1')
                       .replace(/^./, str => str.toUpperCase());
-                    
+
                     return (
                       <div key={key} className="flex justify-between text-sm">
                         <span className="text-muted-foreground">{formattedKey}:</span>
@@ -364,7 +364,7 @@ export default function CredentialDetailModal({
             <Download className="h-4 w-4 mr-2" />
             Export JSON
           </Button>
-          <Button 
+          <Button
             variant="outline"
             onClick={() => window.open(`/verify?hash=${credential.credentialHash}`, '_blank')}
           >

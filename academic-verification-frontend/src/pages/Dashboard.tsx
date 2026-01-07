@@ -2,21 +2,96 @@
 import { useWalletStore } from '@/store/wallet.store';
 import { useDIDStore } from '@/store/did.store';
 import { useBalance } from '@/hooks/blockchain/useBalance';
+import { usePolkadotContext } from '@/providers/PolkadotProvider';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { Award, Building2, CheckCircle, Wallet, AlertCircle, Key } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import CreateDIDPage from './CreateDIDPage';
-import { useState } from 'react';
-import { DID_STATUS } from '@/lib/utils/constants';
+import { useState, useEffect } from 'react';
 import CreateDIDModal from '@/components/did/CreateDIDModal';
 
 export default function Dashboard() {
   const { isConnected, account } = useWalletStore();
-  const { hasDID, isInstitution, didAddress, status } = useDIDStore();
+  const { hasDID, isInstitution, didAddress } = useDIDStore();
   const { balance, loading: balanceLoading } = useBalance();
+  const { api, isReady } = usePolkadotContext();
   const [showCreateDID, setShowCreateDID] = useState(false);
+
+  const [stats, setStats] = useState({
+    credentials: 0,
+    recipientsOrVerified: 0,
+    reputation: 0
+  });
+
+  // Fetch dashboard stats
+  useEffect(() => {
+    if (!isReady || !api || !hasDID || !didAddress) return;
+
+    const fetchStats = async () => {
+      try {
+        if (isInstitution) {
+          // Institution Stats
+          const [issuedCredentials, reputationData] = await Promise.all([
+            api.query.credential.credentialsByIssuer(didAddress),
+            api.query.reputation.reputationScores(didAddress)
+          ]);
+
+          const issuedCount = !issuedCredentials.isEmpty ? (issuedCredentials.toJSON() as any[]).length : 0;
+
+          let reputationScore = 0;
+          if (!reputationData.isEmpty) {
+            const repData = reputationData.toJSON() as any;
+            reputationScore = repData.totalScore || 0;
+          }
+
+          // For Active Recipients, we'd need to count unique holders from issued credentials
+          // This is a bit expensive for client-side, but fine for small numbers
+          let uniqueRecipients = 0;
+          if (!issuedCredentials.isEmpty) {
+            const credentials = issuedCredentials.toJSON() as any[];
+            const holders = new Set(credentials.map(c => c.holder));
+            uniqueRecipients = holders.size;
+          }
+
+          setStats({
+            credentials: issuedCount,
+            recipientsOrVerified: uniqueRecipients,
+            reputation: reputationScore
+          });
+        } else {
+          // User Stats
+          const [userCredentials, reputationData] = await Promise.all([
+            api.query.credential.credentialsByHolder(didAddress),
+            api.query.reputation.reputationScores(didAddress)
+          ]);
+
+          const credCount = !userCredentials.isEmpty ? (userCredentials.toJSON() as any[]).length : 0;
+
+          let reputationScore = 0;
+          if (!reputationData.isEmpty) {
+            const repData = reputationData.toJSON() as any;
+            reputationScore = repData.totalScore || 0;
+          }
+
+          // Fetch verified count (credentials where status is active and verified by issuer)
+          // For now simplified to just total credentials as verified count isn't directly tracked per user
+          // Or we could count how many times their credentials have been verified if that event was tracked
+          // Using 0 for now as 'Verified' usually implies incoming verifications
+
+          setStats({
+            credentials: credCount,
+            recipientsOrVerified: 0,
+            reputation: reputationScore
+          });
+        }
+      } catch (error) {
+        console.error('Error fetching dashboard stats:', error);
+      }
+    };
+
+    fetchStats();
+  }, [isReady, api, hasDID, didAddress, isInstitution]);
 
   // Not connected - show connection prompt
   if (!isConnected) {
@@ -65,7 +140,7 @@ export default function Dashboard() {
               Let's create your decentralized identifier to get started
             </p>
           </div>
-          
+
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center">
@@ -82,12 +157,12 @@ export default function Dashboard() {
                   <strong>What is a DID?</strong>
                 </p>
                 <p className="text-sm text-blue-700 dark:text-blue-300 mt-2">
-                  A DID is your unique identity on the blockchain. It allows institutions to issue 
-                  credentials directly to you, and enables anyone to verify your credentials without 
+                  A DID is your unique identity on the blockchain. It allows institutions to issue
+                  credentials directly to you, and enables anyone to verify your credentials without
                   needing to contact the issuing institution.
                 </p>
               </div>
-              
+
               <Button onClick={() => setShowCreateDID(true)} className="w-full">
                 <Key className="h-4 w-4 mr-2" />
                 Create DID Now
@@ -114,13 +189,13 @@ export default function Dashboard() {
             Welcome back, {account?.name || 'there'}!
           </h1>
           <p className="text-muted-foreground">
-            {isInstitution 
-              ? 'Manage your institution and issue credentials' 
+            {isInstitution
+              ? 'Manage your institution and issue credentials'
               : 'Manage your credentials and academic identity'
             }
           </p>
         </div>
-        
+
         {/* Balance Display */}
         {balance && (
           <Card className="bg-gradient-to-br from-primary/10 to-purple-500/10">
@@ -165,7 +240,7 @@ export default function Dashboard() {
             <Award className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">0</div>
+            <div className="text-2xl font-bold">{stats.credentials}</div>
             <p className="text-xs text-muted-foreground">
               {isInstitution ? 'Credentials issued' : 'Academic credentials'}
             </p>
@@ -180,7 +255,7 @@ export default function Dashboard() {
             <CheckCircle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">0</div>
+            <div className="text-2xl font-bold">{stats.recipientsOrVerified}</div>
             <p className="text-xs text-muted-foreground">
               {isInstitution ? 'Unique recipients' : 'Times verified'}
             </p>
@@ -195,7 +270,7 @@ export default function Dashboard() {
             <Building2 className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">0</div>
+            <div className="text-2xl font-bold">{stats.reputation}</div>
             <p className="text-xs text-muted-foreground">
               Reputation score
             </p>

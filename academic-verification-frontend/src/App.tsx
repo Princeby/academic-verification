@@ -18,8 +18,6 @@ import Verify from './pages/Verify';
 import Institutions from './pages/Institutions';
 import Settings from './pages/Settings';
 import CreateDIDPage from './pages/CreateDIDPage';
-import MyRequests from './pages/MyRequests';
-import InstitutionRequests from './pages/InstitutionRequests';
 import AdminVerification from './pages/AdminVerification';
 import InstitutionRegistration from './components/did/InstitutionRegistration';
 
@@ -67,21 +65,19 @@ function App() {
                     <Route path="/" element={<Home />} />
                     <Route path="/verify" element={<Verify />} />
                     <Route path="/institutions" element={<Institutions />} />
-                    
+
                     {/* User Routes */}
                     <Route path="/dashboard" element={<Dashboard />} />
                     <Route path="/create-did" element={<CreateDIDPage />} />
                     <Route path="/credentials" element={<Credentials />} />
-                    <Route path="/my-requests" element={<MyRequests />} />
                     <Route path="/settings" element={<Settings />} />
-                    
+
                     {/* Institution Routes */}
                     <Route path="/institution" element={<Institution />} />
                     <Route path="/institution/register" element={<InstitutionRegistration />} />
                     <Route path="/institution/issue" element={<IssueCredential />} />
                     <Route path="/institution/issued" element={<IssuedCredentials />} />
-                    <Route path="/institution/requests" element={<InstitutionRequests />} />
-                    
+
                     {/* Admin Routes */}
                     <Route path="/admin/verify-institutions" element={<AdminVerification />} />
                   </Routes>

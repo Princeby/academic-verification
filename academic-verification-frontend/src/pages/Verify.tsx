@@ -1,5 +1,4 @@
 // src/pages/Verify.tsx
-import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import VerifyCredential from '@/components/credentials/VerifyCredential';
 import { Shield } from 'lucide-react';

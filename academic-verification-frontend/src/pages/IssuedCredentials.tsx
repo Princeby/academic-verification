@@ -2,27 +2,27 @@
 import { useState, useEffect } from 'react';
 import { useDIDStore } from '@/store/did.store';
 import { useNavigate } from 'react-router-dom';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
+import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Badge } from '@/components/ui/Badge';
-import { 
-  FileText, 
-  Search, 
+import { Modal } from '@/components/ui/Modal';
+import {
+  FileText,
+  Search,
   Plus,
-  Download,
   Eye,
   XCircle,
   Calendar,
   User,
   Loader2,
   RefreshCw,
-  AlertCircle
+  Copy
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useBlockchain } from '@/hooks/blockchain/useBlockchain';
-import { web3FromAddress } from '@polkadot/extension-dapp';
 import { useWalletStore } from '@/store/wallet.store';
+import { hexToString } from '@polkadot/util';
 
 interface IssuedCredential {
   id: string;
@@ -40,20 +40,22 @@ export default function IssuedCredentials() {
   const { isInstitution, didAddress } = useDIDStore();
   const { queries, transactions, isReady, api } = useBlockchain();
   const { account } = useWalletStore();
-  
+
   const [credentials, setCredentials] = useState<IssuedCredential[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'revoked'>('all');
   const [revoking, setRevoking] = useState<string | null>(null);
+  const [selectedCredential, setSelectedCredential] = useState<IssuedCredential | null>(null);
+  const [showDetailModal, setShowDetailModal] = useState(false);
 
   useEffect(() => {
     if (!isInstitution) {
       navigate('/institution');
       return;
     }
-    
+
     if (isReady && queries && didAddress) {
       fetchIssuedCredentials();
     }
@@ -68,12 +70,12 @@ export default function IssuedCredentials() {
     setLoading(true);
     try {
       console.log('📡 Fetching issued credentials for:', didAddress);
-      
+
       // Fetch credentials from blockchain
       const blockchainCredentials = await queries.credential.getCredentialsByIssuer(didAddress);
-      
+
       console.log('✅ Fetched issued credentials:', blockchainCredentials);
-      
+
       if (blockchainCredentials.length === 0) {
         console.log('ℹ️ No issued credentials found');
         setCredentials([]);
@@ -81,37 +83,74 @@ export default function IssuedCredentials() {
         return;
       }
 
+      // Helper to decode hex strings
+      const decodeHexString = (hexString: string | unknown): string => {
+        try {
+          if (typeof hexString !== 'string') {
+            return String(hexString);
+          }
+          if (!hexString.startsWith('0x')) {
+            return hexString;
+          }
+          const decoded = hexToString(hexString);
+          return decoded.replace(/\0/g, '');
+        } catch (error) {
+          console.error('Error decoding hex string:', error);
+          return String(hexString);
+        }
+      };
+
       // Parse and format credentials
-      const formattedCredentials: IssuedCredential[] = blockchainCredentials.map((cred: any) => {
+      const formattedCredentials: IssuedCredential[] = blockchainCredentials.map((cred: unknown) => {
+        const credential = cred as {
+          id: string;
+          holder: string;
+          credentialType: string;
+          metadata?: string;
+          issuedAt: number;
+          revoked?: boolean;
+        };
         let degreeName = 'Academic Credential';
         let metadata = '';
 
-        // Parse metadata
-        if (cred.metadata) {
+        // Parse metadata - first decode from hex if needed
+        if (credential.metadata) {
           try {
-            const parsedMetadata = JSON.parse(cred.metadata);
+            // Decode hex string first
+            const decodedMetadata = decodeHexString(credential.metadata);
+            // Then parse as JSON
+            const parsedMetadata = JSON.parse(decodedMetadata);
             degreeName = parsedMetadata.degreeName || parsedMetadata.programName || degreeName;
-            metadata = cred.metadata;
-          } catch (e) {
-            degreeName = cred.metadata;
-            metadata = cred.metadata;
+            metadata = decodedMetadata; // Store decoded version
+          } catch {
+            // If not hex or not JSON, use as-is
+            degreeName = decodeHexString(credential.metadata);
+            metadata = decodeHexString(credential.metadata);
           }
         }
 
+        // Handle issuedAt - it might be in seconds or block number
+        // If it's 0 or very small, it might be a block number, otherwise treat as timestamp
+        let issuedAtTimestamp = credential.issuedAt;
+        if (issuedAtTimestamp > 0 && issuedAtTimestamp < 10000000000) {
+          // Likely in seconds, convert to milliseconds
+          issuedAtTimestamp = issuedAtTimestamp * 1000;
+        }
+
         return {
-          id: cred.id,
-          holder: cred.holder,
-          credentialType: cred.credentialType,
+          id: credential.id,
+          holder: credential.holder,
+          credentialType: credential.credentialType,
           degreeName,
-          issuedAt: cred.issuedAt,
-          status: cred.revoked ? 'revoked' : 'active',
+          issuedAt: issuedAtTimestamp,
+          status: credential.revoked ? 'revoked' : 'active',
           metadata,
         };
       });
 
       console.log('✅ Formatted credentials:', formattedCredentials);
       setCredentials(formattedCredentials);
-      
+
       if (formattedCredentials.length > 0) {
         toast.success(`Found ${formattedCredentials.length} issued credential(s)`);
       }
@@ -150,8 +189,8 @@ export default function IssuedCredentials() {
       const statusToast = toast.loading('Preparing transaction...');
 
       // Convert credentialId string to bytes if needed
-      const credentialIdBytes = credentialId.startsWith('0x') 
-        ? credentialId 
+      const credentialIdBytes = credentialId.startsWith('0x')
+        ? credentialId
         : '0x' + credentialId;
 
       // Revoke credential
@@ -171,14 +210,14 @@ export default function IssuedCredentials() {
 
       if (result.success) {
         console.log('✅ Credential revoked successfully');
-        
+
         // Update local state
         setCredentials(prev =>
           prev.map(cred =>
             cred.id === credentialId ? { ...cred, status: 'revoked' as const } : cred
           )
         );
-        
+
         toast.success('Credential revoked successfully', {
           description: `Transaction: ${result.transactionHash?.slice(0, 10)}...`,
         });
@@ -196,13 +235,13 @@ export default function IssuedCredentials() {
   };
 
   const filteredCredentials = credentials.filter(cred => {
-    const matchesSearch = !searchQuery || 
+    const matchesSearch = !searchQuery ||
       cred.degreeName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       cred.holderName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       cred.holder.toLowerCase().includes(searchQuery.toLowerCase());
-    
+
     const matchesStatus = filterStatus === 'all' || cred.status === filterStatus;
-    
+
     return matchesSearch && matchesStatus;
   });
 
@@ -310,7 +349,7 @@ export default function IssuedCredentials() {
                 />
               </div>
             </div>
-            
+
             <div className="flex gap-2">
               <Button
                 variant={filterStatus === 'all' ? 'default' : 'outline'}
@@ -389,18 +428,18 @@ export default function IssuedCredentials() {
                       </Badge>
                       <Badge variant="outline">{credential.credentialType}</Badge>
                     </div>
-                    
+
                     <div className="space-y-1 text-sm">
                       <div className="flex items-center text-muted-foreground">
                         <User className="h-3 w-3 mr-2" />
                         <span>
-                          {credential.holderName || 'Unknown'} 
+                          {credential.holderName || 'Unknown'}
                           <code className="ml-2 text-xs">
                             {credential.holder.slice(0, 8)}...{credential.holder.slice(-6)}
                           </code>
                         </span>
                       </div>
-                      
+
                       <div className="flex items-center text-muted-foreground">
                         <Calendar className="h-3 w-3 mr-2" />
                         <span>
@@ -411,11 +450,18 @@ export default function IssuedCredentials() {
                   </div>
 
                   <div className="flex flex-col sm:flex-row gap-2 ml-4">
-                    <Button variant="outline" size="sm">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setSelectedCredential(credential);
+                        setShowDetailModal(true);
+                      }}
+                    >
                       <Eye className="h-3 w-3 mr-1" />
                       View
                     </Button>
-                    
+
                     {credential.status === 'active' && (
                       <Button
                         variant="outline"
@@ -444,6 +490,186 @@ export default function IssuedCredentials() {
           ))}
         </div>
       )}
+
+      {/* Credential Detail Modal */}
+      <Modal
+        isOpen={showDetailModal}
+        onClose={() => {
+          setShowDetailModal(false);
+          setSelectedCredential(null);
+        }}
+        title="Credential Details"
+        description="Issued credential information"
+        className="max-w-2xl"
+      >
+        {selectedCredential && (
+          <div className="space-y-6">
+            {/* Status Badge */}
+            <div className="flex items-center justify-between">
+              <Badge variant={selectedCredential.status === 'active' ? 'success' : 'error'} className="text-sm">
+                {selectedCredential.status === 'active' ? 'Active' : 'Revoked'}
+              </Badge>
+              <Badge variant="outline">{selectedCredential.credentialType}</Badge>
+            </div>
+
+            {/* Degree Name */}
+            <div>
+              <label className="text-sm font-semibold text-muted-foreground">Degree / Certificate</label>
+              <p className="text-lg font-medium mt-1">{selectedCredential.degreeName}</p>
+            </div>
+
+            {/* Credential ID */}
+            <div>
+              <label className="text-sm font-semibold text-muted-foreground">Credential ID</label>
+              <div className="flex items-center gap-2 mt-1">
+                <p className="font-mono text-sm break-all bg-muted p-2 rounded flex-1">{selectedCredential.id}</p>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 flex-shrink-0"
+                  onClick={() => {
+                    navigator.clipboard.writeText(selectedCredential.id);
+                    toast.success('Credential ID copied!');
+                  }}
+                >
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+
+            {/* Holder */}
+            <div>
+              <label className="text-sm font-semibold text-muted-foreground">Holder Address</label>
+              <div className="flex items-center gap-2 mt-1">
+                <p className="font-mono text-sm break-all bg-muted p-2 rounded flex-1">{selectedCredential.holder}</p>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 flex-shrink-0"
+                  onClick={() => {
+                    navigator.clipboard.writeText(selectedCredential.holder);
+                    toast.success('Holder address copied!');
+                  }}
+                >
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+
+            {/* Issue Date */}
+            <div>
+              <label className="text-sm font-semibold text-muted-foreground">Issued Date</label>
+              <p className="mt-1">
+                {selectedCredential.issuedAt > 0
+                  ? new Date(selectedCredential.issuedAt).toLocaleDateString('en-US', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
+                  })
+                  : 'Not available'
+                }
+              </p>
+            </div>
+
+            {/* Metadata Details */}
+            {selectedCredential.metadata && (() => {
+              try {
+                const meta = JSON.parse(selectedCredential.metadata);
+                return (
+                  <div className="space-y-4 border-t pt-4">
+                    <h4 className="font-semibold">Additional Details</h4>
+                    <div className="grid grid-cols-2 gap-4">
+                      {meta.fieldOfStudy && (
+                        <div>
+                          <label className="text-sm text-muted-foreground">Field of Study</label>
+                          <p className="font-medium">{meta.fieldOfStudy}</p>
+                        </div>
+                      )}
+                      {meta.major && (
+                        <div>
+                          <label className="text-sm text-muted-foreground">Major</label>
+                          <p className="font-medium">{meta.major}</p>
+                        </div>
+                      )}
+                      {meta.minor && (
+                        <div>
+                          <label className="text-sm text-muted-foreground">Minor</label>
+                          <p className="font-medium">{meta.minor}</p>
+                        </div>
+                      )}
+                      {meta.gpa && (
+                        <div>
+                          <label className="text-sm text-muted-foreground">GPA</label>
+                          <p className="font-medium">{meta.gpa}</p>
+                        </div>
+                      )}
+                      {meta.graduationDate && (
+                        <div>
+                          <label className="text-sm text-muted-foreground">Graduation Date</label>
+                          <p className="font-medium">{meta.graduationDate}</p>
+                        </div>
+                      )}
+                      {meta.honors && (
+                        <div>
+                          <label className="text-sm text-muted-foreground">Honors</label>
+                          <p className="font-medium">{meta.honors}</p>
+                        </div>
+                      )}
+                      {meta.referenceNumber && (
+                        <div>
+                          <label className="text-sm text-muted-foreground">Reference Number</label>
+                          <p className="font-medium">{meta.referenceNumber}</p>
+                        </div>
+                      )}
+                    </div>
+                    {meta.notes && (
+                      <div>
+                        <label className="text-sm text-muted-foreground">Notes</label>
+                        <p className="font-medium">{meta.notes}</p>
+                      </div>
+                    )}
+                  </div>
+                );
+              } catch {
+                return (
+                  <div>
+                    <label className="text-sm font-semibold text-muted-foreground">Raw Metadata</label>
+                    <p className="font-mono text-sm mt-1 break-all bg-muted p-2 rounded">
+                      {selectedCredential.metadata}
+                    </p>
+                  </div>
+                );
+              }
+            })()}
+
+            {/* Actions */}
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowDetailModal(false);
+                  setSelectedCredential(null);
+                }}
+              >
+                Close
+              </Button>
+              {selectedCredential.status === 'active' && (
+                <Button
+                  variant="destructive"
+                  onClick={() => {
+                    handleRevoke(selectedCredential.id);
+                    setShowDetailModal(false);
+                    setSelectedCredential(null);
+                  }}
+                >
+                  <XCircle className="h-4 w-4 mr-2" />
+                  Revoke Credential
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

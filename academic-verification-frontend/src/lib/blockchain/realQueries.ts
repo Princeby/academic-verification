@@ -1,12 +1,12 @@
 // src/lib/blockchain/realQueries.ts
 import type { ApiPromise } from '@polkadot/api';
-import { formatCredentialData, parseMetadata, checkPalletAvailability } from './integration';
+import { formatCredentialData, checkPalletAvailability } from './integration';
 
 /**
  * Enhanced DID Queries with real blockchain data
  */
 export class RealDIDQueries {
-  constructor(private api: ApiPromise) {}
+  constructor(private api: ApiPromise) { }
 
   async getDID(address: string) {
     try {
@@ -17,13 +17,13 @@ export class RealDIDQueries {
       }
 
       const didDoc = await this.api.query.did.didDocuments(address);
-      
+
       if (didDoc.isEmpty) {
         return null;
       }
-      
+
       const data = didDoc.toJSON() as any;
-      
+
       return {
         controller: data.controller,
         publicKeys: data.publicKeys || [],
@@ -46,13 +46,13 @@ export class RealDIDQueries {
       }
 
       const institution = await this.api.query.did.institutions(address);
-      
+
       if (institution.isEmpty) {
         return null;
       }
-      
+
       const data = institution.toJSON() as any;
-      
+
       return {
         name: data.name,
         did: data.did,
@@ -81,14 +81,14 @@ export class RealDIDQueries {
       if (!hasPallet) return [];
 
       const entries = await this.api.query.did.institutions.entries();
-      
+
       return entries
         .map(([key, value]) => {
           if (value.isEmpty) return null;
-          
+
           const address = key.args[0].toString();
           const data = value.toJSON() as any;
-          
+
           return {
             address,
             name: data.name,
@@ -108,7 +108,7 @@ export class RealDIDQueries {
  * Enhanced Credential Queries with real blockchain data
  */
 export class RealCredentialQueries {
-  constructor(private api: ApiPromise) {}
+  constructor(private api: ApiPromise) { }
 
   async getCredential(credentialId: string) {
     try {
@@ -119,11 +119,11 @@ export class RealCredentialQueries {
       }
 
       const credential = await this.api.query.credential.credentials(credentialId);
-      
+
       if (credential.isEmpty) {
         return null;
       }
-      
+
       const data = credential.toJSON() as any;
       return formatCredentialData(data);
     } catch (error) {
@@ -141,11 +141,11 @@ export class RealCredentialQueries {
       }
 
       const credentialId = await this.api.query.credential.credentialByHash(credentialHash);
-      
+
       if (credentialId.isEmpty) {
         return null;
       }
-      
+
       const id = credentialId.toString();
       return this.getCredential(id);
     } catch (error) {
@@ -163,13 +163,13 @@ export class RealCredentialQueries {
       }
 
       const credentials = await this.api.query.credential.credentialsByHolder(holderAddress);
-      
+
       if (credentials.isEmpty) {
         return [];
       }
-      
+
       const credentialRefs = credentials.toJSON() as any[];
-      
+
       // Fetch full credentials
       const fullCredentials = await Promise.all(
         credentialRefs.map(async (ref) => {
@@ -181,7 +181,7 @@ export class RealCredentialQueries {
           }
         })
       );
-      
+
       return fullCredentials.filter(c => c !== null);
     } catch (error) {
       console.error('Error fetching credentials by holder:', error);
@@ -198,13 +198,13 @@ export class RealCredentialQueries {
       }
 
       const credentialIds = await this.api.query.credential.credentialsByIssuer(issuerAddress);
-      
+
       if (credentialIds.isEmpty) {
         return [];
       }
-      
+
       const ids = credentialIds.toJSON() as string[];
-      
+
       // Fetch full credentials
       const fullCredentials = await Promise.all(
         ids.map(async (id) => {
@@ -216,7 +216,7 @@ export class RealCredentialQueries {
           }
         })
       );
-      
+
       return fullCredentials.filter(c => c !== null);
     } catch (error) {
       console.error('Error fetching credentials by issuer:', error);
@@ -239,7 +239,7 @@ export class RealCredentialQueries {
  * Enhanced Reputation Queries with real blockchain data
  */
 export class RealReputationQueries {
-  constructor(private api: ApiPromise) {}
+  constructor(private api: ApiPromise) { }
 
   async getReputationScore(address: string) {
     try {
@@ -256,7 +256,7 @@ export class RealReputationQueries {
       }
 
       const score = await this.api.query.reputation.reputationScores(address);
-      
+
       if (score.isEmpty) {
         return {
           credentialsIssued: 0,
@@ -266,7 +266,7 @@ export class RealReputationQueries {
           totalScore: 0,
         };
       }
-      
+
       return score.toJSON() as any;
     } catch (error) {
       console.error('Error fetching reputation score:', error);
@@ -286,11 +286,11 @@ export class RealReputationQueries {
       if (!hasPallet) return [];
 
       const endorsements = await this.api.query.reputation.endorsementsReceived(address);
-      
+
       if (endorsements.isEmpty) {
         return [];
       }
-      
+
       return endorsements.toJSON() as any[];
     } catch (error) {
       console.error('Error fetching endorsements received:', error);
@@ -304,11 +304,11 @@ export class RealReputationQueries {
       if (!hasPallet) return [];
 
       const endorsements = await this.api.query.reputation.endorsementsGiven(address);
-      
+
       if (endorsements.isEmpty) {
         return [];
       }
-      
+
       return endorsements.toJSON() as any[];
     } catch (error) {
       console.error('Error fetching endorsements given:', error);

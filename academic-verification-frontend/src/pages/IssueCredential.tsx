@@ -3,7 +3,7 @@ import { useDIDStore } from '@/store/did.store';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { AlertCircle, ArrowLeft } from 'lucide-react';
-import { lazy, Suspense, useEffect } from 'react';
+import { lazy, Suspense } from 'react';
 import { Spinner } from '@/components/ui/Spinner';
 
 // Lazy load the form component to prevent blocking the app
@@ -13,7 +13,7 @@ export default function IssueCredential() {
   const navigate = useNavigate();
   const { isInstitution, hasDID } = useDIDStore();
 
-  const handleSuccess = (credentialId: string) => {
+  const handleSuccess = (_credentialId: string) => {
     // Navigate to institution page after success
     navigate('/institution');
   };
@@ -76,7 +76,7 @@ export default function IssueCredential() {
 
   return (
     <div className="py-8">
-      <Suspense 
+      <Suspense
         fallback={
           <div className="flex items-center justify-center min-h-[60vh]">
             <div className="text-center">
@@ -86,7 +86,7 @@ export default function IssueCredential() {
           </div>
         }
       >
-        <IssueCredentialForm 
+        <IssueCredentialForm
           onSuccess={handleSuccess}
           onCancel={handleCancel}
         />

@@ -2,7 +2,6 @@ import { ButtonHTMLAttributes, forwardRef } from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/utils/cn';
 
-
 const buttonVariants = cva(
   "inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
   {
@@ -31,10 +30,22 @@ const buttonVariants = cva(
 
 export interface ButtonProps
   extends ButtonHTMLAttributes<HTMLButtonElement>,
-    VariantProps<typeof buttonVariants> {}
+    VariantProps<typeof buttonVariants> {
+  asChild?: boolean;
+}
 
 const Button = forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, ...props }, ref) => {
+  ({ className, variant, size, asChild = false, ...props }, ref) => {
+    // When asChild is true, we render the first child with button styles
+    // For simplicity, we just apply styles to a wrapper span when asChild is used
+    if (asChild && props.children) {
+      return (
+        <span className={cn(buttonVariants({ variant, size, className }))}>
+          {props.children}
+        </span>
+      );
+    }
+    
     return (
       <button
         className={cn(buttonVariants({ variant, size, className }))}

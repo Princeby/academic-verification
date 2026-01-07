@@ -15,12 +15,12 @@ import { hexToString } from '@polkadot/util';
 
 export default function Credentials() {
   const navigate = useNavigate();
-  const { isConnected, account } = useWalletStore();
+  const { isConnected } = useWalletStore();
   const { hasDID, didAddress } = useDIDStore();
   const { credentials, setCredentials, loading, setLoading } = useCredentialsStore();
   const [refreshing, setRefreshing] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
-  
+
   const { queries, isReady } = useBlockchain();
 
   // Helper to decode hex strings
@@ -54,12 +54,12 @@ export default function Credentials() {
 
     try {
       console.log('📡 Fetching credentials for:', didAddress);
-      
+
       // Fetch real credentials from blockchain
       const blockchainCredentials = await queries.credential.getCredentialsByHolder(didAddress);
-      
+
       console.log('✅ Fetched credentials:', blockchainCredentials);
-      
+
       if (blockchainCredentials.length === 0) {
         console.log('ℹ️ No credentials found on blockchain');
         setCredentials([]);
@@ -72,12 +72,12 @@ export default function Credentials() {
         blockchainCredentials.map(async (cred) => {
           try {
             const institution = await queries.did.getInstitution(cred.issuer);
-            
+
             // Decode institution name if it exists
-            const issuerName = institution?.name 
+            const issuerName = institution?.name
               ? decodeHexString(institution.name)
               : undefined;
-            
+
             return {
               ...cred,
               issuerName,
@@ -100,7 +100,7 @@ export default function Credentials() {
 
       console.log('✅ Processed credentials:', credentialsWithInstitutionNames);
       setCredentials(credentialsWithInstitutionNames);
-      
+
       if (credentialsWithInstitutionNames.length > 0) {
         toast.success(`Found ${credentialsWithInstitutionNames.length} credential(s)`);
       }
@@ -242,7 +242,7 @@ export default function Credentials() {
               Connected to Blockchain
             </p>
             <p className="text-blue-700 dark:text-blue-300 mt-1">
-              All credentials are fetched directly from the blockchain. 
+              All credentials are fetched directly from the blockchain.
               Your DID: <code className="text-xs font-mono">{didAddress?.slice(0, 10)}...{didAddress?.slice(-8)}</code>
             </p>
           </div>
@@ -261,9 +261,9 @@ export default function Credentials() {
               <p className="text-red-700 dark:text-red-300 mt-1">
                 {fetchError}
               </p>
-              <Button 
-                variant="outline" 
-                size="sm" 
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={handleRefresh}
                 className="mt-2"
               >
@@ -275,11 +275,11 @@ export default function Credentials() {
       )}
 
       {/* Credentials List */}
-      <CredentialsList 
+      <CredentialsList
         credentials={credentials}
         loading={loading}
         emptyMessage={
-          isReady 
+          isReady
             ? "No credentials found on blockchain. Credentials issued to your DID will appear here."
             : "Waiting for blockchain connection..."
         }

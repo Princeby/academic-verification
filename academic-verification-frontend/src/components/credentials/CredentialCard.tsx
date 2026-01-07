@@ -1,10 +1,10 @@
 // src/components/credentials/CredentialCard.tsx - FIXED WITH HEX DECODING
 import { useState } from 'react';
-import { 
-  Award, 
-  Building2, 
-  Calendar, 
-  FileText, 
+import {
+  Award,
+  Building2,
+  Calendar,
+  FileText,
   ExternalLink,
   Download,
   Share2,
@@ -42,12 +42,12 @@ interface CredentialCardProps {
   onDownload?: () => void;
 }
 
-export default function CredentialCard({ 
-  credential, 
+export default function CredentialCard({
+  credential,
   onViewDetails,
   onVerify,
   onShare,
-  onDownload 
+  onDownload
 }: CredentialCardProps) {
   const [isHovered, setIsHovered] = useState(false);
 
@@ -75,7 +75,7 @@ export default function CredentialCard({
         color: 'text-red-600'
       };
     }
-    
+
     if (credential.expiresAt && credential.expiresAt < Date.now()) {
       return {
         label: 'Expired',
@@ -84,7 +84,7 @@ export default function CredentialCard({
         color: 'text-yellow-600'
       };
     }
-    
+
     return {
       label: 'Active',
       variant: 'success' as const,
@@ -119,12 +119,12 @@ export default function CredentialCard({
   };
 
   // Decode issuer name if it's hex
-  const displayIssuerName = credential.issuerName 
+  const displayIssuerName = credential.issuerName
     ? decodeHexString(credential.issuerName)
     : `${credential.issuer.slice(0, 8)}...${credential.issuer.slice(-6)}`;
 
   return (
-    <Card 
+    <Card
       className={cn(
         "transition-all duration-200 cursor-pointer hover:shadow-lg",
         credential.revoked && "opacity-60 border-red-200 dark:border-red-900",
