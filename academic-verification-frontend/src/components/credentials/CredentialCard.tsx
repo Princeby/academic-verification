@@ -96,9 +96,12 @@ export default function CredentialCard({
   const status = getStatus();
   const StatusIcon = status.icon;
 
-  // Format dates
+  // Format dates - handle both seconds (blockchain) and milliseconds timestamps
   const formatDate = (timestamp: number) => {
-    return new Date(timestamp).toLocaleDateString('en-US', {
+    // If timestamp is in seconds (before year 2001 in ms), convert to milliseconds
+    // Timestamps less than 10000000000 are likely in seconds
+    const msTimestamp = timestamp < 10000000000 ? timestamp * 1000 : timestamp;
+    return new Date(msTimestamp).toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'short',
       day: 'numeric'

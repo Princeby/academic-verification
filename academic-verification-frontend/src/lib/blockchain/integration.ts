@@ -41,17 +41,50 @@ export async function verifyFileHash(file: File, expectedHash: string): Promise<
 
 /**
  * Format blockchain data for UI
+ * Handles timestamp conversion - blockchain may store block numbers instead of timestamps
  */
 export function formatCredentialData(rawCredential: any) {
+  // Helper to convert/validate timestamps
+  // The blockchain might store:
+  // 1. Unix timestamp in seconds (10 digits, e.g., 1704672000 for Jan 2024)
+  // 2. Unix timestamp in milliseconds (13 digits)
+  // 3. Block number (small number, e.g., 180)
+  // We need to distinguish these and provide a valid millisecond timestamp
+  const normalizeTimestamp = (timestamp: number | undefined): number | undefined => {
+    if (!timestamp || timestamp === 0) return undefined;
+
+    // Unix timestamp for Jan 1, 2000 is 946684800 (seconds)
+    // If value is less than this, it's likely a block number, not a timestamp
+    const year2000Unix = 946684800;
+
+    if (timestamp < year2000Unix) {
+      // This is likely a block number, not a valid timestamp
+      // Return undefined to trigger the fallback
+      console.warn('Timestamp appears to be a block number, not a real timestamp:', timestamp);
+      return undefined;
+    }
+
+    // If timestamp is in seconds (10 digits), convert to milliseconds
+    if (timestamp < 10000000000) {
+      return timestamp * 1000;
+    }
+
+    // Already in milliseconds
+    return timestamp;
+  };
+
+  const issuedAtTimestamp = normalizeTimestamp(rawCredential.issuedAt);
+
   return {
     id: rawCredential.credentialId,
     holder: rawCredential.holder,
     issuer: rawCredential.issuer,
     credentialHash: rawCredential.credentialHash,
-    credentialType: formatCredentialType(rawCredential.credentialType), // Use helper
+    credentialType: formatCredentialType(rawCredential.credentialType),
     metadata: rawCredential.metadata ? Buffer.from(rawCredential.metadata).toString('utf-8') : undefined,
-    issuedAt: rawCredential.issuedAt,
-    expiresAt: rawCredential.expiresAt || undefined,
+    // Use normalized timestamp, or current time as fallback for display purposes
+    issuedAt: issuedAtTimestamp || Date.now(),
+    expiresAt: normalizeTimestamp(rawCredential.expiresAt),
     revoked: rawCredential.status === 'Revoked',
   };
 }

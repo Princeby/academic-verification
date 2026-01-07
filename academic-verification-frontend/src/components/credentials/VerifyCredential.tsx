@@ -28,6 +28,7 @@ import { toast } from 'sonner';
 import { useBlockchain } from '@/hooks/blockchain/useBlockchain';
 import { hexToString } from '@polkadot/util';
 import QRCode from 'qrcode';
+import jsQR from 'jsqr';
 
 interface VerificationResult {
   found: boolean;
@@ -212,7 +213,6 @@ export default function VerifyCredential({ initialHash }: VerifyCredentialProps 
 
     // Use jsQR to decode
     try {
-      // @ts-ignore - jsQR will be available from CDN
       const code = jsQR(imageData.data, imageData.width, imageData.height);
 
       if (code && code.data) {
@@ -352,9 +352,12 @@ export default function VerifyCredential({ initialHash }: VerifyCredentialProps 
     verifyByHash(hashInput);
   };
 
-  // Format date
+  // Format date - handle both seconds (blockchain) and milliseconds timestamps
   const formatDate = (timestamp: number) => {
-    return new Date(timestamp).toLocaleDateString('en-US', {
+    // If timestamp is in seconds (before year 2001 in ms), convert to milliseconds
+    // Timestamps less than 10000000000 are likely in seconds
+    const msTimestamp = timestamp < 10000000000 ? timestamp * 1000 : timestamp;
+    return new Date(msTimestamp).toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'long',
       day: 'numeric',
@@ -428,8 +431,6 @@ export default function VerifyCredential({ initialHash }: VerifyCredentialProps 
 
   return (
     <div className="space-y-8">
-      {/* Load jsQR from CDN */}
-      <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
 
       {/* Verification Methods */}
       <Card>

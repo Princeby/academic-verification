@@ -50,6 +50,18 @@ export default function IssuedCredentials() {
   const [selectedCredential, setSelectedCredential] = useState<IssuedCredential | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
 
+  // Format date helper - handles both seconds (blockchain) and milliseconds timestamps
+  const formatDate = (timestamp: number, options?: Intl.DateTimeFormatOptions) => {
+    if (!timestamp || timestamp === 0) return 'Not available';
+    // If timestamp is in seconds (before year 2001 in ms), convert to milliseconds
+    const msTimestamp = timestamp < 10000000000 ? timestamp * 1000 : timestamp;
+    return new Date(msTimestamp).toLocaleDateString('en-US', options || {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+  };
+
   useEffect(() => {
     if (!isInstitution) {
       navigate('/institution');
@@ -443,7 +455,7 @@ export default function IssuedCredentials() {
                       <div className="flex items-center text-muted-foreground">
                         <Calendar className="h-3 w-3 mr-2" />
                         <span>
-                          Issued {new Date(credential.issuedAt).toLocaleDateString()}
+                          Issued {formatDate(credential.issuedAt)}
                         </span>
                       </div>
                     </div>
@@ -560,14 +572,7 @@ export default function IssuedCredentials() {
             <div>
               <label className="text-sm font-semibold text-muted-foreground">Issued Date</label>
               <p className="mt-1">
-                {selectedCredential.issuedAt > 0
-                  ? new Date(selectedCredential.issuedAt).toLocaleDateString('en-US', {
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric'
-                  })
-                  : 'Not available'
-                }
+                {formatDate(selectedCredential.issuedAt)}
               </p>
             </div>
 
