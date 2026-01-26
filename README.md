@@ -520,9 +520,7 @@ MIT License - see [LICENSE](LICENSE) file for details
 ## 👥 Team & Contact
 
 **Project Lead**: Your Name  
-📧 Email: your.email@example.com  
-🐦 Twitter: [@yourhandle](https://twitter.com/yourhandle)  
-💼 LinkedIn: [Your Profile](https://linkedin.com/in/yourprofile)
+📧 Email: ogbodoebuka2@gmail.com  
 
 ---
 
