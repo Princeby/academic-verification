@@ -545,16 +545,6 @@ MIT License - see [LICENSE](LICENSE) file for details
 - 🐛 [Report Issues](https://github.com/yourusername/academic-verification/issues)
 - 🗺️ [Roadmap](https://github.com/yourusername/academic-verification/projects)
 
----
-
-## 🚀 What's Next?
-
-- [ ] Mobile app (React Native)
-- [ ] Batch credential operations
-- [ ] Advanced analytics dashboard
-- [ ] Integration with IPFS for document storage
-- [ ] Multi-chain support
-- [ ] AI-powered credential verification
 
 ---
 
