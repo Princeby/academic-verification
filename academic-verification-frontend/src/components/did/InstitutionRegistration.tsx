@@ -20,7 +20,6 @@ import {
 import { Button } from '../ui/Button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../ui/Card';
 import { Input } from '../ui/Input';
-import { Badge } from '../ui/Badge';
 import { toast } from 'sonner';
 import { INSTITUTION_TYPES } from '@/lib/utils/constants';
 import { useDIDStore } from '@/store/did.store';
@@ -83,7 +82,6 @@ export default function InstitutionRegistration({ onSuccess, onCancel }: Institu
     },
   });
 
-  const selectedType = watch('type');
 
   // Handle document upload
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -102,8 +100,8 @@ export default function InstitutionRegistration({ onSuccess, onCancel }: Institu
     setUploadedDocs(prev => [...prev, ...validFiles]);
     
     // Generate hashes for each file
-    for (const file of validFiles) {
-      const hash = await generateFileHash(file);
+    for (const validFile of validFiles) {
+      const hash = await generateFileHash(validFile);
       setDocHashes(prev => [...prev, hash]);
     }
     
@@ -111,7 +109,7 @@ export default function InstitutionRegistration({ onSuccess, onCancel }: Institu
   };
 
   // Generate file hash (mock - replace with actual Blake2)
-  const generateFileHash = async (file: File): Promise<string> => {
+  const generateFileHash = async (_file: File): Promise<string> => {
     // Mock hash generation
     return '0x' + Array(64).fill(0).map(() => 
       Math.floor(Math.random() * 16).toString(16)

@@ -3,7 +3,7 @@ import { Circle, Loader2 } from 'lucide-react';
 import { usePolkadotApi } from '@/hooks/blockchain/usePolkadotApi';
 
 export default function ChainStatus() {
-  const { isConnected, isReady, blockNumber, chainName, error } = usePolkadotApi();
+  const { isReady, blockNumber, chainName, error } = usePolkadotApi();
 
   // Show loading state
   if (!isReady && !error) {

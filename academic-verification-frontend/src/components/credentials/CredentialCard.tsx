@@ -5,7 +5,6 @@ import {
   Building2,
   Calendar,
   FileText,
-  ExternalLink,
   Download,
   Share2,
   Eye,

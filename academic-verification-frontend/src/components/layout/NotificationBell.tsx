@@ -2,7 +2,6 @@
 import { useState } from 'react';
 import { Bell, Check, X, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
-import { Badge } from '@/components/ui/Badge';
 import { useNotificationsStore } from '@/store/notifications.store';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils/cn';

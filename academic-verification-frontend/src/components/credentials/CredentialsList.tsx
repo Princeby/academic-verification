@@ -4,17 +4,14 @@ import {
   Grid3x3, 
   List, 
   Search, 
-  Filter,
-  SortAsc,
   Award,
   Loader2
 } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
-import { Badge } from '../ui/Badge';
 import CredentialCard, { Credential } from './CredentialCard';
 import CredentialDetailModal from './CredentialDetailModal';
-import { CREDENTIAL_TYPES, CREDENTIAL_STATUS } from '@/lib/utils/constants';
+import { CREDENTIAL_TYPES } from '@/lib/utils/constants';
 import { hexToString } from '@polkadot/util';
 
 interface CredentialsListProps {

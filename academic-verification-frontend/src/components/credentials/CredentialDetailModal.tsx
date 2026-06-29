@@ -12,8 +12,7 @@ import {
   Download,
   Share2,
   CheckCircle2,
-  AlertCircle,
-  QrCode
+  AlertCircle
 } from 'lucide-react';
 import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';

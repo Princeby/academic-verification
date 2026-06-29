@@ -88,7 +88,6 @@ export default function IssueCredentialForm({ onSuccess, onCancel }: IssueCreden
     register, 
     handleSubmit, 
     watch, 
-    setValue,
     formState: { errors },
     trigger 
   } = useForm<IssueCredentialFormData>({
@@ -279,7 +278,7 @@ export default function IssueCredentialForm({ onSuccess, onCancel }: IssueCreden
         const daysDiff = Math.ceil((expirationDate.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24));
         // Assuming ~6 second blocks, roughly 14,400 blocks per day
         const blocksToAdd = daysDiff * 14400;
-        expiresAtBlock = currentBlock.toNumber() + blocksToAdd;
+        expiresAtBlock = (currentBlock as unknown as { toNumber: () => number }).toNumber() + blocksToAdd;
       }
 
       // Show transaction progress
